@@ -1,62 +1,106 @@
-#![warn(clippy::all, rust_2018_idioms)]
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
+use eframe::egui;
+use egui_plot::{Line, Plot, PlotPoints};
+use std::f32::consts::PI;
+use std::time::Instant;
 
-// When compiling natively:
-#[cfg(not(target_arch = "wasm32"))]
-fn main() -> eframe::Result {
-    env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
+// Constants
+const A4_FREQ: f32 = 440.0;
+const SAMPLE_RATE: f32 = 44100.0; // Standard audio sample rate
+const DURATION: f32 = 15.0; // 15 seconds for the A4 note
 
-    let native_options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([400.0, 300.0])
-            .with_min_inner_size([300.0, 220.0])
-            .with_icon(
-                // NOTE: Adding an icon is optional
-                eframe::icon_data::from_png_bytes(&include_bytes!("../assets/icon-256.png")[..])
-                    .expect("Failed to load icon"),
-            ),
-        ..Default::default()
-    };
-    eframe::run_native(
-        "eframe template",
-        native_options,
-        Box::new(|cc| Ok(Box::new(eframe_template::TemplateApp::new(cc)))),
-    )
+fn generate_sine_wave(frequency: f32, duration: f32, sample_rate: f32) -> Vec<f32> {
+    let total_samples = (duration * sample_rate) as usize;
+    (0..total_samples)
+        .map(|x| {
+            let t = x as f32 / sample_rate;
+            (t * frequency * 2.0 * PI).sin()
+        })
+        .collect()
 }
 
-// When compiling to web using trunk:
-#[cfg(target_arch = "wasm32")]
-fn main() {
-    // Redirect `log` message to `console.log` and friends:
-    eframe::WebLogger::init(log::LevelFilter::Debug).ok();
+struct MyEguiApp {
+    sine_wave: Vec<f32>,
+    is_playing: bool,
+    start_time: Instant,
+    last_time: f32,
+}
 
-    let web_options = eframe::WebOptions::default();
+impl MyEguiApp {
+    fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        let sine_wave = generate_sine_wave(A4_FREQ, DURATION, SAMPLE_RATE);
+        let start_time = Instant::now();
+        let is_playing = false;
+        let last_time = 0.0;
+        Self {
+            sine_wave,
+            is_playing,
+            start_time,
+            last_time,
+        }
+    }
+}
 
-    wasm_bindgen_futures::spawn_local(async {
-        let start_result = eframe::WebRunner::new()
-            .start(
-                "the_canvas_id",
-                web_options,
-                Box::new(|cc| Ok(Box::new(eframe_template::TemplateApp::new(cc)))),
-            )
-            .await;
+impl eframe::App for MyEguiApp {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.heading("Caliber");
 
-        // Remove the loading text and spinner:
-        let loading_text = web_sys::window()
-            .and_then(|w| w.document())
-            .and_then(|d| d.get_element_by_id("loading_text"));
-        if let Some(loading_text) = loading_text {
-            match start_result {
-                Ok(_) => {
-                    loading_text.remove();
-                }
-                Err(e) => {
-                    loading_text.set_inner_html(
-                        "<p> The app has crashed. See the developer console for details. </p>",
-                    );
-                    panic!("Failed to start eframe: {e:?}");
+            if ui.button("Plot").clicked() {
+                self.is_playing = true;
+                self.start_time = Instant::now();
+            }
+
+            if ui.button("Play").clicked() {
+                self.is_playing = true;
+                self.start_time = Instant::now();
+            }
+
+            if self.is_playing {
+                let elapsed = self.start_time.elapsed().as_secs_f32();
+                let max_time = elapsed.min(DURATION);
+
+                // Plot the sine wave over time
+                let samples_to_show = (max_time * SAMPLE_RATE) as usize;
+                let sine_wave_segment = &self.sine_wave[..samples_to_show];
+
+                let points: PlotPoints = sine_wave_segment
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &val)| {
+                        let time = i as f32 / SAMPLE_RATE;
+                        [time as f64, val as f64]
+                    })
+                    .collect();
+
+                // Create the line to plot
+                let line = Line::new(points);
+
+                // Plot the wave
+                Plot::new("Sine Wave")
+                    .view_aspect(2.0) // Aspect ratio of the plot
+                    .show(ui, |plot_ui| {
+                        plot_ui.line(line);
+                    });
+
+                // Stop playing after 15 seconds
+                if elapsed >= DURATION {
+                    self.is_playing = false;
                 }
             }
-        }
-    });
+
+            // Request a repaint to keep the animation running
+            if self.is_playing {
+                ctx.request_repaint();
+            }
+        });
+    }
+}
+
+fn main() {
+    let native_options = eframe::NativeOptions::default();
+    eframe::run_native(
+        "Caliber",
+        native_options,
+        Box::new(|cc| Ok(Box::new(MyEguiApp::new(cc)))),
+    );
 }
