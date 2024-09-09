@@ -1,6 +1,9 @@
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::{Data, FromSample, Sample, SampleFormat};
 use eframe::egui;
 use egui_plot::{Line, Plot, PlotPoints};
 use std::f32::consts::PI;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 // Constants
@@ -21,6 +24,7 @@ fn generate_sine_wave(frequency: f32, duration: f32, sample_rate: f32) -> Vec<f3
 struct MyEguiApp {
     sine_wave: Vec<f32>,
     is_playing: bool,
+    started_sound: bool,
     start_time: Instant,
     last_time: f32,
     zoom_factor: f32,
@@ -33,6 +37,7 @@ impl MyEguiApp {
         let sine_wave = generate_sine_wave(A4_FREQ, DURATION, SAMPLE_RATE);
         let start_time = Instant::now();
         let is_playing = false;
+        let started_sound = false;
         let last_time = 0.0;
         let zoom_factor = 1.0;
         let x_offset = 0.0;
@@ -40,6 +45,7 @@ impl MyEguiApp {
         Self {
             sine_wave,
             is_playing,
+            started_sound,
             start_time,
             last_time,
             zoom_factor,
@@ -47,9 +53,7 @@ impl MyEguiApp {
             points_vector,
         }
     }
-}
 
-impl MyEguiApp {
     fn plot(&mut self) {
         self.is_playing = true;
         self.start_time = Instant::now();
@@ -58,8 +62,48 @@ impl MyEguiApp {
     fn stop(&mut self) {
         self.is_playing = false;
     }
+
+    fn start_sound(&mut self) {
+        if !self.started_sound {
+            return;
+        }
+        self.started_sound = true;
+        let host = cpal::default_host();
+        let device = host
+            .default_output_device()
+            .expect("default output device not found");
+        let mut suported_configs_range = device
+            .supported_output_configs()
+            .expect("supported configs range not found");
+        let supported_config = suported_configs_range
+            .next()
+            .expect("no supporte configs")
+            .with_max_sample_rate();
+        let err_fn = |err| eprintln!("an error occurred on the output audio stream: {}", err);
+        let sample_format = supported_config.sample_format();
+        let config = supported_config.into();
+        let stream = match sample_format {
+            SampleFormat::F32 => {
+                device.build_output_stream(&config, write_silence::<f32>, err_fn, None)
+            }
+            SampleFormat::I16 => {
+                device.build_output_stream(&config, write_silence::<i16>, err_fn, None)
+            }
+            SampleFormat::U16 => {
+                device.build_output_stream(&config, write_silence::<u16>, err_fn, None)
+            }
+            sample_format => panic!("Unsupported sample format '{sample_format}'"),
+        }
+        .unwrap();
+        stream.play().unwrap();
+    }
 }
 
+fn write_silence<T: Sample>(data: &mut [T], _: &cpal::OutputCallbackInfo) {
+    for sample in data.iter_mut() {
+        *sample = Sample::EQUILIBRIUM;
+    }
+}
 impl eframe::App for MyEguiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -105,6 +149,7 @@ impl eframe::App for MyEguiApp {
             });
 
             if self.is_playing {
+                self.start_sound();
                 let elapsed = self.start_time.elapsed().as_secs_f32();
                 let max_time = elapsed.min(DURATION);
 
@@ -116,7 +161,7 @@ impl eframe::App for MyEguiApp {
                     .iter()
                     .enumerate()
                     .map(|(i, &val)| {
-                        let time = (i as f32 / SAMPLE_RATE);
+                        let time = i as f32 / SAMPLE_RATE;
                         [time as f64, val as f64]
                     })
                     .collect();
