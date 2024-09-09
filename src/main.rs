@@ -23,6 +23,9 @@ struct MyEguiApp {
     is_playing: bool,
     start_time: Instant,
     last_time: f32,
+    zoom_factor: f32,
+    x_offset: f32,
+    points_vector: Vec<[f64; 2]>,
 }
 
 impl MyEguiApp {
@@ -31,12 +34,29 @@ impl MyEguiApp {
         let start_time = Instant::now();
         let is_playing = false;
         let last_time = 0.0;
+        let zoom_factor = 1.0;
+        let x_offset = 0.0;
+        let points_vector = vec![];
         Self {
             sine_wave,
             is_playing,
             start_time,
             last_time,
+            zoom_factor,
+            x_offset,
+            points_vector,
         }
+    }
+}
+
+impl MyEguiApp {
+    fn plot(&mut self) {
+        self.is_playing = true;
+        self.start_time = Instant::now();
+    }
+
+    fn stop(&mut self) {
+        self.is_playing = false;
     }
 }
 
@@ -45,15 +65,44 @@ impl eframe::App for MyEguiApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading("Caliber");
 
-            if ui.button("Plot").clicked() {
-                self.is_playing = true;
-                self.start_time = Instant::now();
-            }
+            ui.horizontal(|ui| {
+                if ui.button("Start").clicked() {
+                    self.plot();
+                };
+                if ui.button("Stop").clicked() {
+                    self.stop();
+                };
+            });
 
-            if ui.button("Play").clicked() {
-                self.is_playing = true;
-                self.start_time = Instant::now();
-            }
+            ui.horizontal(|ui| {
+                if ui.button("Zoom In").clicked() {
+                    self.zoom_factor *= 1.2; // Increase zoom factor
+                }
+                if ui.button("Zoom Out").clicked() {
+                    self.zoom_factor /= 1.2; // Decrease zoom factor
+                }
+            });
+
+            // Create a scroll area with a scrollbar
+            egui::ScrollArea::horizontal().show(ui, |ui| {
+                Plot::new("Sine Wave")
+                    .view_aspect(2.0) // Aspect ratio of the plot
+                    .data_aspect(self.zoom_factor)
+                    .allow_drag(true)
+                    .show(ui, |plot_ui| {
+                        plot_ui.line(Line::new(PlotPoints::new(self.points_vector.clone())));
+                    });
+            });
+
+            ui.horizontal(|ui| {
+                ui.label("Scroll X:");
+                if ui.button("<< Left").clicked() {
+                    self.x_offset -= 0.1; // Pan left
+                }
+                if ui.button("Right >>").clicked() {
+                    self.x_offset += 0.1; // Pan right
+                }
+            });
 
             if self.is_playing {
                 let elapsed = self.start_time.elapsed().as_secs_f32();
@@ -63,24 +112,15 @@ impl eframe::App for MyEguiApp {
                 let samples_to_show = (max_time * SAMPLE_RATE) as usize;
                 let sine_wave_segment = &self.sine_wave[..samples_to_show];
 
-                let points: PlotPoints = sine_wave_segment
+                let points: Vec<[f64; 2]> = sine_wave_segment
                     .iter()
                     .enumerate()
                     .map(|(i, &val)| {
-                        let time = i as f32 / SAMPLE_RATE;
+                        let time = (i as f32 / SAMPLE_RATE);
                         [time as f64, val as f64]
                     })
                     .collect();
-
-                // Create the line to plot
-                let line = Line::new(points);
-
-                // Plot the wave
-                Plot::new("Sine Wave")
-                    .view_aspect(2.0) // Aspect ratio of the plot
-                    .show(ui, |plot_ui| {
-                        plot_ui.line(line);
-                    });
+                self.points_vector = points;
 
                 // Stop playing after 15 seconds
                 if elapsed >= DURATION {
