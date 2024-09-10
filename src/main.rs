@@ -4,101 +4,17 @@ use egui_plot::{Line, Plot, PlotPoints};
 
 // Audio
 use rodio::{source::SineWave, source::Source, OutputStream, Sink};
-use std::f64::consts::PI;
-use std::thread;
-use std::time::{Duration, Instant};
+use std::thread::spawn;
+use std::time::Instant;
 use std::vec::Vec;
 
 // Constants
 const A4_FREQ: f32 = 440.0;
 const SAMPLE_RATE: f32 = 44100.0; // Standard audio sample rate
 const DURATION: f32 = 5.0; // 15 seconds for the A4 note
-
-fn generate_sine_wave_vector(frequency: f32) -> Vec<f32> {
-    Vec::<f32>::new()
-}
-
-struct Chirp {
-    start_freq: f32,
-    end_freq: f32,
-    duration: f32,
-    sample_rate: f32,
-    index: usize,
-    samples: Vec<f32>,
-}
-
-impl Chirp {
-    fn new(sample_rate: f32, start_freq: f32, end_freq: f32, duration: f32) -> Self {
-        let samples = generate_chirp_wave(sample_rate, duration, start_freq, end_freq);
-        Self {
-            start_freq,
-            end_freq,
-            duration,
-            sample_rate,
-            index: 0,
-            samples,
-        }
-    }
-}
-
-impl Iterator for Chirp {
-    type Item = f32;
-    fn next(&mut self) -> Option<f32> {
-        let index = self.index as usize;
-        if index < self.samples.len() {
-            let sample = self.samples[index];
-            self.index += 1;
-            Some(sample)
-        } else {
-            None
-        }
-    }
-}
-
-impl Source for Chirp {
-    fn current_frame_len(&self) -> Option<usize> {
-        // Number of remaining samples (frame length)
-        Some(self.samples.len() - self.index)
-    }
-
-    fn channels(&self) -> u16 {
-        // We are generating a mono signal (one channel)
-        1
-    }
-
-    fn sample_rate(&self) -> u32 {
-        // Return the sample rate
-        self.sample_rate as u32
-    }
-
-    fn total_duration(&self) -> Option<Duration> {
-        // Total duration of the chirp wave
-        Some(Duration::from_secs_f64(
-            self.samples.len() as f64 / self.sample_rate as f64,
-        ))
-    }
-}
-
-// Function to generate a linear chirp wave
-fn generate_chirp_wave(
-    sample_rate: f32,
-    duration: f32,
-    start_freq: f32,
-    end_freq: f32,
-) -> Vec<f32> {
-    let num_samples = (duration * sample_rate as f32) as usize;
-    let mut waveform = Vec::with_capacity(num_samples);
-
-    for i in 0..num_samples {
-        let t = i as f64 / sample_rate as f64; // current time
-        let freq =
-            start_freq as f64 + (end_freq as f64 - start_freq as f64) * (t / duration as f64);
-        let sample = (2.0 * PI * freq * t).sin(); // sine wave sample
-        waveform.push(sample as f32);
-    }
-
-    waveform
-}
+                           //
+mod chirp;
+use chirp::Chirp;
 
 struct MyEguiApp {
     sine_wave: SineWave,
@@ -148,14 +64,14 @@ impl MyEguiApp {
         self.started_sound = true;
         // Play the sound in a separate thread
         let duration = self.duration;
-        thread::spawn(move || {
-            let sine_wave = SineWave::new(A4_FREQ);
+        spawn(move || {
+            let sound = Chirp::new(SAMPLE_RATE, 100.0, 1000.0, duration);
             // Play the sound for 2 seconds through the speakers
             // Get an output stream handle to the default physical sound device
             let (_stream, stream_handle) = OutputStream::try_default().unwrap();
             let sink = Sink::try_new(&stream_handle).unwrap();
             // Play the sound directly on the device
-            sink.append(sine_wave.take_duration(std::time::Duration::from_secs(duration as u64)));
+            sink.append(sound);
             sink.sleep_until_end();
         });
     }
@@ -270,6 +186,7 @@ fn wasm_main() {
 
 #[cfg(test)]
 mod tests {
+    use super::chirp::Chirp;
     use super::*;
     use rodio::{source::SineWave, source::Source, OutputStream, Sink};
 
@@ -288,14 +205,24 @@ mod tests {
 
     #[test]
     fn test_make_chirp() {
-        let chirp = Chirp::new(SAMPLE_RATE, 100.0, 1000.0, 14.0);
-        // Play the sound for 2 seconds through the speakers
+        // Generate a chirp that lasts for 2 seconds.
+        // Starting frequency = 100.0 HZ.
+        // End frequency = 1000.0 HZ.
+        // Sample rate = 44100.0 rate/second. Which is standard for digital audio.
+        let chirp = Chirp::new(SAMPLE_RATE, 100.0, 1000.0, 2.0);
+
         // // Get an output stream handle to the default physical sound device
         let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+
+        // Make a sync to append the audio to.
         let sink = Sink::try_new(&stream_handle).unwrap();
+
         // Load a sound from a file, using a path relative to Cargo.toml
         // Play the sound directly on the device
         sink.append(chirp);
+
+        // Sleep until the audio is done playing.
+        // Giving up ownership of the sink would close it and the audio will stop.
         sink.sleep_until_end();
     }
 }
