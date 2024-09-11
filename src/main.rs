@@ -16,6 +16,7 @@ const SAMPLE_RATE: f32 = 44100.0; // Standard audio sample rate
 const DURATION: f32 = 15.0; // 15 seconds for the A4 note
                             //
 mod chirp;
+mod freq;
 use chirp::Chirp;
 
 struct MyEguiApp {
@@ -101,7 +102,10 @@ impl MyEguiApp {
             input_stream.play().unwrap();
             std::thread::sleep(std::time::Duration::from_secs_f32(duration));
             let locked_data = data.lock().unwrap();
-            println!("Data length: {}", locked_data.len());
+            println!(
+                "Frequency of resonance: {}",
+                freq::freq_of_resonance(locked_data.clone(), SAMPLE_RATE)
+            );
         });
     }
 }
