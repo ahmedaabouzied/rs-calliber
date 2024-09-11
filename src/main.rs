@@ -83,6 +83,7 @@ impl MyEguiApp {
             // Play the sound for 2 seconds through the speakers
             // Get an output stream handle to the default physical sound device
             let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+            println!("Output device: Default");
             let sink = Sink::try_new(&stream_handle).unwrap();
             // Play the sound directly on the device
             sink.append(sound);
@@ -114,7 +115,6 @@ impl MyEguiApp {
             std::thread::sleep(std::time::Duration::from_secs_f32(duration));
             let locked_data = data.lock().unwrap();
             let ffr = freq::freq_of_resonance(locked_data.clone(), SAMPLE_RATE);
-            println!("Frequency of resonance: {}", ffr);
             for_tx.send(ffr).unwrap();
         });
     }
@@ -185,6 +185,7 @@ impl eframe::App for MyEguiApp {
                     })
                     .collect();
                 self.points_vector = points;
+                ui.label("Calculating frequency of resonance...");
 
                 // Stop playing after 15 seconds
                 if elapsed >= DURATION {
@@ -193,25 +194,14 @@ impl eframe::App for MyEguiApp {
                 }
             }
 
-            // Request a repaint to keep the animation running
-            if self.is_playing {
-                ctx.request_repaint();
+            if let Ok(freq) = self.for_rx.try_recv() {
+                self.last_for = freq;
             }
-            match self.for_rx.try_recv() {
-                Ok(freq) => {
-                    println!("Frequency of resonance: {}", freq);
-                    self.last_for = freq;
-                    ui.label(format!("Frequency of resonance: {}", freq));
-                    ctx.request_repaint();
-                }
-                Err(_) => {
-                    if self.is_playing {
-                        ui.label("Calculating frequency of resonance...");
-                    } else if self.last_for != 0.0 {
-                        ui.label(format!("Frequency of resonance: {}", self.last_for));
-                    }
-                }
-            };
+            if !self.is_playing {
+                ui.label(format!("Frequency of resonance: {:.2} Hz", self.last_for));
+            }
+            // Request a repaint to keep the animation running
+            ctx.request_repaint();
         });
     }
 }
