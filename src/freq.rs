@@ -1,4 +1,5 @@
 use rustfft::{num_complex::Complex, FftPlanner};
+
 pub fn freq_of_resonance(samples: Vec<f32>, sample_rate: f32) -> f32 {
     let num_samples = samples.len();
 
