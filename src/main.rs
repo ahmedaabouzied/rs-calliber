@@ -3,7 +3,9 @@ use eframe::egui;
 use egui_plot::{Line, Plot, PlotPoints};
 
 // Audio
-use rodio::{source::SineWave, source::Source, OutputStream, Sink};
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use rodio::{source::SineWave, OutputStream, Sink};
+use std::sync::{Arc, Mutex};
 use std::thread::spawn;
 use std::time::Instant;
 use std::vec::Vec;
@@ -11,8 +13,8 @@ use std::vec::Vec;
 // Constants
 const A4_FREQ: f32 = 440.0;
 const SAMPLE_RATE: f32 = 44100.0; // Standard audio sample rate
-const DURATION: f32 = 5.0; // 15 seconds for the A4 note
-                           //
+const DURATION: f32 = 15.0; // 15 seconds for the A4 note
+                            //
 mod chirp;
 use chirp::Chirp;
 
@@ -65,7 +67,7 @@ impl MyEguiApp {
         // Play the sound in a separate thread
         let duration = self.duration;
         spawn(move || {
-            let sound = Chirp::new(SAMPLE_RATE, 100.0, 1000.0, duration);
+            let sound = Chirp::new(SAMPLE_RATE, 1000.0, 20000.0, duration);
             // Play the sound for 2 seconds through the speakers
             // Get an output stream handle to the default physical sound device
             let (_stream, stream_handle) = OutputStream::try_default().unwrap();
@@ -73,6 +75,33 @@ impl MyEguiApp {
             // Play the sound directly on the device
             sink.append(sound);
             sink.sleep_until_end();
+        });
+        spawn(move || {
+            let host = cpal::default_host();
+            let input_device = host.default_input_device().unwrap();
+            println!("Input device: {}", input_device.name().unwrap());
+            let config_range = input_device.default_input_config().unwrap();
+            let data = Arc::new(Mutex::new(Vec::new()));
+
+            let data_clone = Arc::clone(&data);
+
+            let input_stream = input_device
+                .build_input_stream(
+                    &config_range.into(),
+                    move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                        let mut locked_data = data_clone.lock().unwrap();
+                        locked_data.extend_from_slice(data);
+                    },
+                    move |err| {
+                        eprintln!("An error occurred on the input stream: {}", err);
+                    },
+                    Option::None,
+                )
+                .unwrap();
+            input_stream.play().unwrap();
+            std::thread::sleep(std::time::Duration::from_secs_f32(duration));
+            let locked_data = data.lock().unwrap();
+            println!("Data length: {}", locked_data.len());
         });
     }
 }
