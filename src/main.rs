@@ -5,6 +5,9 @@ use egui_plot::{Line, Plot, PlotPoints};
 // Audio
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use rodio::{source::SineWave, OutputStream, Sink};
+
+use std::sync::mpsc;
+use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::spawn;
 use std::time::Instant;
@@ -13,8 +16,8 @@ use std::vec::Vec;
 // Constants
 const A4_FREQ: f32 = 440.0;
 const SAMPLE_RATE: f32 = 44100.0; // Standard audio sample rate
-const DURATION: f32 = 15.0; // 15 seconds for the A4 note
-                            //
+const DURATION: f32 = 5.0; // 15 seconds for the A4 note
+                           //
 mod chirp;
 mod freq;
 use chirp::Chirp;
@@ -28,6 +31,9 @@ struct MyEguiApp {
     zoom_factor: f32,
     x_offset: f32,
     points_vector: Vec<[f64; 2]>,
+    for_tx: Sender<f32>,
+    for_rx: Receiver<f32>,
+    last_for: f32,
 }
 
 impl MyEguiApp {
@@ -39,6 +45,7 @@ impl MyEguiApp {
         let zoom_factor = 1.0;
         let x_offset = 0.0;
         let points_vector = vec![];
+        let (for_tx, for_rx): (Sender<f32>, Receiver<f32>) = mpsc::channel();
         Self {
             sine_wave,
             duration: DURATION,
@@ -48,6 +55,9 @@ impl MyEguiApp {
             zoom_factor,
             x_offset,
             points_vector,
+            for_tx,
+            for_rx,
+            last_for: 0.0,
         }
     }
 
@@ -67,6 +77,7 @@ impl MyEguiApp {
         self.started_sound = true;
         // Play the sound in a separate thread
         let duration = self.duration;
+        let for_tx = self.for_tx.clone();
         spawn(move || {
             let sound = Chirp::new(SAMPLE_RATE, 1000.0, 20000.0, duration);
             // Play the sound for 2 seconds through the speakers
@@ -102,10 +113,9 @@ impl MyEguiApp {
             input_stream.play().unwrap();
             std::thread::sleep(std::time::Duration::from_secs_f32(duration));
             let locked_data = data.lock().unwrap();
-            println!(
-                "Frequency of resonance: {}",
-                freq::freq_of_resonance(locked_data.clone(), SAMPLE_RATE)
-            );
+            let ffr = freq::freq_of_resonance(locked_data.clone(), SAMPLE_RATE);
+            println!("Frequency of resonance: {}", ffr);
+            for_tx.send(ffr).unwrap();
         });
     }
 }
@@ -187,6 +197,21 @@ impl eframe::App for MyEguiApp {
             if self.is_playing {
                 ctx.request_repaint();
             }
+            match self.for_rx.try_recv() {
+                Ok(freq) => {
+                    println!("Frequency of resonance: {}", freq);
+                    self.last_for = freq;
+                    ui.label(format!("Frequency of resonance: {}", freq));
+                    ctx.request_repaint();
+                }
+                Err(_) => {
+                    if self.is_playing {
+                        ui.label("Calculating frequency of resonance...");
+                    } else if self.last_for != 0.0 {
+                        ui.label(format!("Frequency of resonance: {}", self.last_for));
+                    }
+                }
+            };
         });
     }
 }
