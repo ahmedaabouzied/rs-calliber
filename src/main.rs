@@ -22,7 +22,7 @@ mod chirp;
 mod freq;
 use chirp::Chirp;
 
-struct MyEguiApp {
+struct MainUI {
     sine_wave: SineWave,
     duration: f32,
     is_playing: bool,
@@ -38,7 +38,7 @@ struct MyEguiApp {
     output_device_name: String,
 }
 
-impl MyEguiApp {
+impl MainUI {
     fn new(_cc: &eframe::CreationContext<'_>) -> Self {
         let sine_wave = SineWave::new(A4_FREQ);
         let start_time = Instant::now();
@@ -98,7 +98,7 @@ impl MyEguiApp {
     }
 }
 
-impl MyEguiApp {
+impl MainUI {
     fn paint_window_title(&self, ui: &mut egui::Ui) {
         ui.heading("Calliber");
     }
@@ -214,7 +214,7 @@ impl MyEguiApp {
     }
 }
 
-impl eframe::App for MyEguiApp {
+impl eframe::App for MainUI {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
             self.paint_window_title(ui);
@@ -248,7 +248,7 @@ fn main() {
     let _ = eframe::run_native(
         "Caliber",
         native_options,
-        Box::new(|cc| Ok(Box::new(MyEguiApp::new(cc)))),
+        Box::new(|cc| Ok(Box::new(MainUI::new(cc)))),
     );
 }
 
@@ -259,7 +259,7 @@ fn wasm_main() {
 
     #[wasm_bindgen(start)]
     pub fn start() -> Result<(), JsValue> {
-        let mut app = MyEguiApp::new(&eframe::CreationContext {
+        let mut app = MainUI::new(&eframe::CreationContext {
             web_info: eframe::WebInfo {
                 canvas_id: "the_canvas_id".to_owned(),
             },
