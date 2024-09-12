@@ -9,10 +9,21 @@ use std::sync::{Arc, Mutex};
 
 use super::freq;
 
-pub fn capture_input(sample_rate: f32, duration: f32, tx: Sender<f32>) {
+pub fn get_input_devices() -> Result<cpal::InputDevices<cpal::Devices>, cpal::DevicesError> {
     let host = cpal::default_host();
-    let input_device = host.default_input_device().unwrap();
-    println!("Input device: {}", input_device.name().unwrap());
+    host.input_devices()
+}
+
+pub fn get_output_devices() -> Result<cpal::OutputDevices<cpal::Devices>, cpal::DevicesError> {
+    let host = cpal::default_host();
+    host.output_devices()
+}
+
+pub fn capture_input(input_device_name: String, sample_rate: f32, duration: f32, tx: Sender<f32>) {
+    let input_device = self::get_input_devices()
+        .unwrap()
+        .find(|d| d.name().unwrap() == input_device_name)
+        .unwrap();
     let config_range = input_device.default_input_config().unwrap();
     let data = Arc::new(Mutex::new(Vec::new()));
 
@@ -38,16 +49,19 @@ pub fn capture_input(sample_rate: f32, duration: f32, tx: Sender<f32>) {
     tx.send(ffr).unwrap();
 }
 
-pub fn play_output<S>(sound: S)
+pub fn play_output<S>(output_device_name: String, sound: S)
 where
     S: Source + Send + 'static,
     f32: FromSample<S::Item>,
     S::Item: Sample + Send,
 {
-    // Play the sound for 2 seconds through the speakers
-    // Get an output stream handle to the default physical sound device
-    let (_stream, stream_handle) = OutputStream::try_default().unwrap();
-    println!("Output device: Default");
+    let (_stream, stream_handle) = OutputStream::try_from_device(
+        &self::get_output_devices()
+            .unwrap()
+            .find(|d| d.name().unwrap() == output_device_name)
+            .unwrap(),
+    )
+    .unwrap();
     let sink = Sink::try_new(&stream_handle).unwrap();
     // Play the sound directly on the device
     sink.append(sound);
