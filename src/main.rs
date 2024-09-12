@@ -3,7 +3,8 @@ use eframe::egui;
 use egui_plot::{Line, Plot, PlotPoints};
 
 // Audio
-use rodio::{source::SineWave, OutputStream, Sink};
+use cpal::traits::DeviceTrait;
+use rodio::source::SineWave;
 
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
@@ -33,6 +34,8 @@ struct MyEguiApp {
     for_tx: Sender<f32>,
     for_rx: Receiver<f32>,
     last_for: f32,
+    input_device_name: String,
+    output_device_name: String,
 }
 
 impl MyEguiApp {
@@ -57,6 +60,8 @@ impl MyEguiApp {
             for_tx,
             for_rx,
             last_for: 0.0,
+            input_device_name: "Default".to_string(),
+            output_device_name: "Default".to_string(),
         }
     }
 
@@ -77,99 +82,159 @@ impl MyEguiApp {
         // Play the sound in a separate thread
         let duration = self.duration;
         let for_tx = self.for_tx.clone();
+        let input_device_name = self.input_device_name.clone();
+        let output_device_name = self.output_device_name.clone();
 
         // Start the wave playing thread.
         spawn(move || {
             let sound = Chirp::new(SAMPLE_RATE, 1000.0, 20000.0, duration);
-            audio::play_output(sound);
+            audio::play_output(output_device_name, sound);
         });
 
         // Start the wave capturing thread.
         spawn(move || {
-            audio::capture_input(SAMPLE_RATE, duration, for_tx);
+            audio::capture_input(input_device_name, SAMPLE_RATE, duration, for_tx);
         });
     }
 }
+
+impl MyEguiApp {
+    fn paint_window_title(&self, ui: &mut egui::Ui) {
+        ui.heading("Calliber");
+    }
+
+    fn paint_start_and_stop_buttons(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            if ui.button("Start").clicked() {
+                self.plot();
+            };
+            if ui.button("Stop").clicked() {
+                self.stop();
+            };
+        });
+    }
+
+    fn paint_sound_devices_dropdown(&mut self, ui: &mut egui::Ui) {
+        let input_devices = audio::get_input_devices().unwrap();
+        let output_devices = audio::get_output_devices().unwrap();
+
+        ui.horizontal(|ui| {
+            ui.label("Input device:");
+            egui::ComboBox::new("input_device", "")
+                .selected_text(self.input_device_name.to_string())
+                .show_ui(ui, |ui| {
+                    for kind in input_devices {
+                        ui.selectable_value(
+                            &mut self.input_device_name,
+                            kind.name().unwrap(),
+                            kind.name().unwrap(),
+                        );
+                    }
+                });
+            ui.label("Output device:");
+            egui::ComboBox::new("output_device", "")
+                .selected_text(self.output_device_name.to_string())
+                .show_ui(ui, |ui| {
+                    for kind in output_devices {
+                        ui.selectable_value(
+                            &mut self.output_device_name,
+                            kind.name().unwrap(),
+                            kind.name().unwrap(),
+                        );
+                    }
+                });
+        });
+    }
+
+    fn paint_zoom_controls(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            if ui.button("Zoom In").clicked() {
+                self.zoom_factor *= 1.2; // Increase zoom factor
+            }
+            if ui.button("Zoom Out").clicked() {
+                self.zoom_factor /= 1.2; // Decrease zoom factor
+            }
+        });
+    }
+
+    fn paint_output_wave(&self, ui: &mut egui::Ui) {
+        egui::ScrollArea::horizontal().show(ui, |ui| {
+            Plot::new("Sine Wave")
+                .view_aspect(2.0) // Aspect ratio of the plot
+                .data_aspect(self.zoom_factor)
+                .allow_drag(true)
+                .show(ui, |plot_ui| {
+                    plot_ui.line(Line::new(PlotPoints::new(self.points_vector.clone())));
+                });
+        });
+    }
+
+    fn paint_scroll_controls(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.label("Scroll X:");
+            if ui.button("<< Left").clicked() {
+                self.x_offset -= 0.1; // Pan left
+            }
+            if ui.button("Right >>").clicked() {
+                self.x_offset += 0.1; // Pan right
+            }
+        });
+    }
+
+    fn paint_frequency_of_resonance(&self, ui: &mut egui::Ui) {
+        ui.label(format!("Frequency of resonance: {:.2} Hz", self.last_for));
+    }
+
+    fn update_outgoing_wave_graph(&mut self) {
+        let elapsed = self.start_time.elapsed().as_secs_f32();
+        let max_time = elapsed.min(DURATION);
+
+        // Plot the sine wave over time
+        let samples_to_show = (max_time * SAMPLE_RATE) as usize;
+        let sine_wave_segment = self
+            .sine_wave
+            .clone()
+            .take(samples_to_show)
+            .collect::<Vec<f32>>();
+
+        let points: Vec<[f64; 2]> = sine_wave_segment
+            .iter()
+            .enumerate()
+            .map(|(i, &val)| {
+                let time = i as f32 / SAMPLE_RATE;
+                [time as f64, val as f64]
+            })
+            .collect();
+        self.points_vector = points;
+        // Stop playing after 15 seconds
+        if elapsed >= DURATION {
+            self.is_playing = false;
+            self.started_sound = false;
+        }
+    }
+}
+
 impl eframe::App for MyEguiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("Caliber");
-
-            ui.horizontal(|ui| {
-                if ui.button("Start").clicked() {
-                    self.plot();
-                };
-                if ui.button("Stop").clicked() {
-                    self.stop();
-                };
-            });
-
-            ui.horizontal(|ui| {
-                if ui.button("Zoom In").clicked() {
-                    self.zoom_factor *= 1.2; // Increase zoom factor
-                }
-                if ui.button("Zoom Out").clicked() {
-                    self.zoom_factor /= 1.2; // Decrease zoom factor
-                }
-            });
-
-            // Create a scroll area with a scrollbar
-            egui::ScrollArea::horizontal().show(ui, |ui| {
-                Plot::new("Sine Wave")
-                    .view_aspect(2.0) // Aspect ratio of the plot
-                    .data_aspect(self.zoom_factor)
-                    .allow_drag(true)
-                    .show(ui, |plot_ui| {
-                        plot_ui.line(Line::new(PlotPoints::new(self.points_vector.clone())));
-                    });
-            });
-
-            ui.horizontal(|ui| {
-                ui.label("Scroll X:");
-                if ui.button("<< Left").clicked() {
-                    self.x_offset -= 0.1; // Pan left
-                }
-                if ui.button("Right >>").clicked() {
-                    self.x_offset += 0.1; // Pan right
-                }
-            });
+            self.paint_window_title(ui);
+            self.paint_start_and_stop_buttons(ui);
+            self.paint_sound_devices_dropdown(ui);
+            self.paint_zoom_controls(ui);
+            self.paint_output_wave(ui);
+            self.paint_scroll_controls(ui);
 
             if self.is_playing {
                 self.start_sound();
-                let elapsed = self.start_time.elapsed().as_secs_f32();
-                let max_time = elapsed.min(DURATION);
-
-                // Plot the sine wave over time
-                let samples_to_show = (max_time * SAMPLE_RATE) as usize;
-                let sine_wave_segment = self
-                    .sine_wave
-                    .clone()
-                    .take(samples_to_show)
-                    .collect::<Vec<f32>>();
-
-                let points: Vec<[f64; 2]> = sine_wave_segment
-                    .iter()
-                    .enumerate()
-                    .map(|(i, &val)| {
-                        let time = i as f32 / SAMPLE_RATE;
-                        [time as f64, val as f64]
-                    })
-                    .collect();
-                self.points_vector = points;
+                self.update_outgoing_wave_graph();
                 ui.label("Calculating frequency of resonance...");
-
-                // Stop playing after 15 seconds
-                if elapsed >= DURATION {
-                    self.is_playing = false;
-                    self.started_sound = false;
-                }
             }
 
             if let Ok(freq) = self.for_rx.try_recv() {
                 self.last_for = freq;
             }
             if !self.is_playing {
-                ui.label(format!("Frequency of resonance: {:.2} Hz", self.last_for));
+                self.paint_frequency_of_resonance(ui);
             }
             // Request a repaint to keep the animation running
             ctx.request_repaint();
