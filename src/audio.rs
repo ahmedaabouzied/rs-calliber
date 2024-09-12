@@ -1,4 +1,8 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use dasp::sample::FromSample;
+use rodio::Sample;
+use rodio::Source;
+use rodio::{OutputStream, Sink};
 
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
@@ -32,4 +36,20 @@ pub fn capture_input(sample_rate: f32, duration: f32, tx: Sender<f32>) {
     let locked_data = data.lock().unwrap();
     let ffr = freq::freq_of_resonance(locked_data.clone(), sample_rate);
     tx.send(ffr).unwrap();
+}
+
+pub fn play_output<S>(sound: S)
+where
+    S: Source + Send + 'static,
+    f32: FromSample<S::Item>,
+    S::Item: Sample + Send,
+{
+    // Play the sound for 2 seconds through the speakers
+    // Get an output stream handle to the default physical sound device
+    let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+    println!("Output device: Default");
+    let sink = Sink::try_new(&stream_handle).unwrap();
+    // Play the sound directly on the device
+    sink.append(sound);
+    sink.sleep_until_end();
 }

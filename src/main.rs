@@ -77,17 +77,14 @@ impl MyEguiApp {
         // Play the sound in a separate thread
         let duration = self.duration;
         let for_tx = self.for_tx.clone();
+
+        // Start the wave playing thread.
         spawn(move || {
             let sound = Chirp::new(SAMPLE_RATE, 1000.0, 20000.0, duration);
-            // Play the sound for 2 seconds through the speakers
-            // Get an output stream handle to the default physical sound device
-            let (_stream, stream_handle) = OutputStream::try_default().unwrap();
-            println!("Output device: Default");
-            let sink = Sink::try_new(&stream_handle).unwrap();
-            // Play the sound directly on the device
-            sink.append(sound);
-            sink.sleep_until_end();
+            audio::play_output(sound);
         });
+
+        // Start the wave capturing thread.
         spawn(move || {
             audio::capture_input(SAMPLE_RATE, duration, for_tx);
         });
