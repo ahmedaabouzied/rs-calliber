@@ -172,8 +172,8 @@ impl MainUI {
         egui::ScrollArea::horizontal().show(ui, |ui| {
             Plot::new("Sine Wave")
                 .view_aspect(2.0) // Aspect ratio of the plot
-                .data_aspect(self.zoom_factor)
-                .allow_drag(true)
+                // .data_aspect(self.zoom_factor)
+                // .allow_drag(true)
                 .show(ui, |plot_ui| {
                     plot_ui.line(Line::new(PlotPoints::new(self.points_vector.clone())));
                 });
@@ -228,41 +228,43 @@ impl MainUI {
 impl eframe::App for MainUI {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
-            self.paint_window_title(ui);
-            self.paint_start_and_stop_buttons(ui);
-            self.paint_sound_devices_dropdown(ui);
-            self.paint_zoom_controls(ui);
-            self.paint_output_wave(ui);
-            self.paint_scroll_controls(ui);
+            egui::scroll_area::ScrollArea::vertical().show(ui, |ui| {
+                self.paint_window_title(ui);
+                self.paint_start_and_stop_buttons(ui);
+                self.paint_sound_devices_dropdown(ui);
+                self.paint_zoom_controls(ui);
+                self.paint_output_wave(ui);
+                self.paint_scroll_controls(ui);
 
-            if self.is_playing {
-                self.start_sound();
-                self.update_outgoing_wave_graph();
-                ui.label("Calculating frequency of resonance...");
-            }
+                if self.is_playing {
+                    self.start_sound();
+                    self.update_outgoing_wave_graph();
+                    ui.label("Calculating frequency of resonance...");
+                }
 
-            let captured_buffer = self.captured_buffer.lock().unwrap();
-            ui.label(format!("Captured buffer len {}", captured_buffer.len()));
-            if let Ok(freq) = self.for_rx.try_recv() {
-                self.last_for = freq;
-            }
-            if !self.is_playing {
-                self.paint_frequency_of_resonance(ui);
-            }
+                let captured_buffer = self.captured_buffer.lock().unwrap();
+                ui.label(format!("Captured buffer len {}", captured_buffer.len()));
+                if let Ok(freq) = self.for_rx.try_recv() {
+                    self.last_for = freq;
+                }
+                if !self.is_playing {
+                    self.paint_frequency_of_resonance(ui);
+                }
 
-            let points: PlotPoints = captured_buffer
-                .iter()
-                .enumerate()
-                .map(|(i, &x)| [i as f64, x as f64])
-                .collect();
+                let points: PlotPoints = captured_buffer
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &x)| [i as f64, x as f64])
+                    .collect();
 
-            let line = Line::new(points);
-            let plot = Plot::new("Received audio").view_aspect(2.0);
-            plot.show(ui, |plot_ui| {
-                plot_ui.line(line);
+                let line = Line::new(points);
+                let plot = Plot::new("Received audio").view_aspect(2.0);
+                plot.show(ui, |plot_ui| {
+                    plot_ui.line(line);
+                });
+                // Request a repaint to keep the animation running
+                ctx.request_repaint();
             });
-            // Request a repaint to keep the animation running
-            ctx.request_repaint();
         });
     }
 }
