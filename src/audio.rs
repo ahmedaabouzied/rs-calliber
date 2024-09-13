@@ -45,12 +45,17 @@ fn select_output_device(device_name: String) -> cpal::Device {
     }
 }
 
-pub fn capture_input(input_device_name: String, sample_rate: f32, duration: f32, tx: Sender<f32>) {
+pub fn capture_input(
+    input_device_name: String,
+    sample_rate: f32,
+    duration: f32,
+    buffer: Arc<Mutex<Vec<f32>>>,
+    for_tx: Sender<f32>,
+) {
     let input_device = select_input_device(input_device_name);
     let config_range = input_device.default_input_config().unwrap();
 
-    let data = Arc::new(Mutex::new(Vec::new())); // Will live along this function.
-    let data_clone = Arc::clone(&data); // To be moved to a lambda.
+    let data_clone = Arc::clone(&buffer);
 
     let input_stream = input_device
         .build_input_stream(
@@ -58,7 +63,12 @@ pub fn capture_input(input_device_name: String, sample_rate: f32, duration: f32,
             move |data: &[f32], _: &cpal::InputCallbackInfo| {
                 let mut locked_data = data_clone.lock().unwrap();
                 locked_data.extend_from_slice(data);
-            }, // data_clone is dropped here.
+
+                let buffer_len = locked_data.len();
+                if buffer_len > 44100 * 5 {
+                    locked_data.drain(0..buffer_len - 44100 * 5);
+                }
+            },
             move |err| {
                 eprintln!("An error occurred on the input stream: {}", err);
             },
@@ -67,9 +77,9 @@ pub fn capture_input(input_device_name: String, sample_rate: f32, duration: f32,
         .unwrap();
     input_stream.play().unwrap();
     std::thread::sleep(std::time::Duration::from_secs_f32(duration));
-    let locked_data = data.lock().unwrap();
+    let locked_data = buffer.lock().unwrap();
     let ffr = freq::freq_of_resonance(locked_data.clone(), sample_rate);
-    tx.send(ffr).unwrap();
+    for_tx.send(ffr).unwrap();
 }
 
 pub fn play_output<S>(output_device_name: String, sound: S)

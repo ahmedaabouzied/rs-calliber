@@ -8,6 +8,7 @@ use rodio::source::SineWave;
 
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
+use std::sync::{Arc, Mutex};
 use std::thread::spawn;
 use std::time::Instant;
 use std::vec::Vec;
@@ -33,6 +34,7 @@ struct MainUI {
     points_vector: Vec<[f64; 2]>,
     for_tx: Sender<f32>,
     for_rx: Receiver<f32>,
+    captured_buffer: Arc<Mutex<Vec<f32>>>,
     last_for: f32,
     input_device_name: String,
     output_device_name: String,
@@ -48,6 +50,7 @@ impl MainUI {
         let x_offset = 0.0;
         let points_vector = vec![];
         let (for_tx, for_rx): (Sender<f32>, Receiver<f32>) = mpsc::channel();
+        let captured_buffer = Arc::new(Mutex::new(Vec::<f32>::new()));
         Self {
             sine_wave,
             duration: DURATION,
@@ -59,6 +62,7 @@ impl MainUI {
             points_vector,
             for_tx,
             for_rx,
+            captured_buffer,
             last_for: 0.0,
             input_device_name: "Default".to_string(),
             output_device_name: "Default".to_string(),
@@ -82,6 +86,7 @@ impl MainUI {
         // Play the sound in a separate thread
         let duration = self.duration;
         let for_tx = self.for_tx.clone();
+        let captured_buffer = self.captured_buffer.clone();
         let input_device_name = self.input_device_name.clone();
         let output_device_name = self.output_device_name.clone();
 
@@ -93,7 +98,13 @@ impl MainUI {
 
         // Start the wave capturing thread.
         spawn(move || {
-            audio::capture_input(input_device_name, SAMPLE_RATE, duration, for_tx);
+            audio::capture_input(
+                input_device_name,
+                SAMPLE_RATE,
+                duration,
+                captured_buffer,
+                for_tx,
+            );
         });
     }
 }
@@ -230,12 +241,26 @@ impl eframe::App for MainUI {
                 ui.label("Calculating frequency of resonance...");
             }
 
+            let captured_buffer = self.captured_buffer.lock().unwrap();
+            ui.label(format!("Captured buffer len {}", captured_buffer.len()));
             if let Ok(freq) = self.for_rx.try_recv() {
                 self.last_for = freq;
             }
             if !self.is_playing {
                 self.paint_frequency_of_resonance(ui);
             }
+
+            let points: PlotPoints = captured_buffer
+                .iter()
+                .enumerate()
+                .map(|(i, &x)| [i as f64, x as f64])
+                .collect();
+
+            let line = Line::new(points);
+            let plot = Plot::new("Received audio").view_aspect(2.0);
+            plot.show(ui, |plot_ui| {
+                plot_ui.line(line);
+            });
             // Request a repaint to keep the animation running
             ctx.request_repaint();
         });
