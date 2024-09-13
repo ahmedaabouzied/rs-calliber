@@ -2,6 +2,7 @@ use rodio::source::Source;
 use std::f64::consts::PI;
 use std::time::Duration;
 
+/// Chirp is a linear sound wave which frequency increases linearly over time.
 pub struct Chirp {
     start_freq: f32,
     end_freq: f32,
@@ -63,7 +64,7 @@ impl Source for Chirp {
     }
 }
 
-// Function to generate a linear chirp wave
+/// generate_chirp_wave generates a linear chirp wave.
 fn generate_chirp_wave(
     sample_rate: f32,
     duration: f32,
