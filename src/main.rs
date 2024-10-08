@@ -9,9 +9,9 @@ use rodio::source::SineWave;
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
-use std::thread::spawn;
 use std::time::Instant;
 use std::vec::Vec;
+use tokio::spawn;
 
 // Constants
 const A4_FREQ: f32 = 440.0;
@@ -91,13 +91,13 @@ impl MainUI {
         let output_device_name = self.output_device_name.clone();
 
         // Start the wave playing thread.
-        spawn(move || {
+        spawn(async move {
             let sound = Chirp::new(SAMPLE_RATE, 500.0, 2000.0, duration);
             audio::play_output(output_device_name, sound);
         });
 
         // Start the wave capturing thread.
-        spawn(move || {
+        spawn(async move {
             audio::capture_input(
                 input_device_name,
                 SAMPLE_RATE,
@@ -171,9 +171,9 @@ impl MainUI {
     fn paint_output_wave(&self, ui: &mut egui::Ui) {
         egui::ScrollArea::horizontal().show(ui, |ui| {
             Plot::new("Sine Wave")
-                // .view_aspect(2.0) // Aspect ratio of the plot
+                .view_aspect(2.0) // Aspect ratio of the plot
                 // .data_aspect(self.zoom_factor)
-                // .allow_drag(true)
+                .allow_drag(true)
                 .show(ui, |plot_ui| {
                     plot_ui.line(Line::new(PlotPoints::new(self.points_vector.clone())));
                 });
@@ -218,7 +218,7 @@ impl MainUI {
             .iter()
             .enumerate()
             .map(|(i, &val)| {
-                let time = i as f32 / SAMPLE_RATE;
+                let time = (i * downsample_factor) as f32 / SAMPLE_RATE;
                 [time as f64, val as f64]
             })
             .collect();
@@ -275,8 +275,8 @@ impl eframe::App for MainUI {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-fn main() {
+#[tokio::main]
+async fn main() {
     let native_options = eframe::NativeOptions::default();
     let _ = eframe::run_native(
         "Caliber",

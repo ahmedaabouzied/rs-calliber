@@ -57,12 +57,14 @@ pub fn capture_input(
 
     let data_clone = Arc::clone(&buffer);
 
+    log::debug!("starting input stream");
     let input_stream = input_device
         .build_input_stream(
             &config_range.into(),
             move |data: &[f32], _: &cpal::InputCallbackInfo| {
                 let mut locked_data = data_clone.lock().unwrap();
                 locked_data.extend_from_slice(data);
+                log::debug!("capturing data");
 
                 let buffer_len = locked_data.len();
                 if buffer_len > 44100 * 5 {
