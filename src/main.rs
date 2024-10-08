@@ -16,7 +16,7 @@ use std::vec::Vec;
 // Constants
 const A4_FREQ: f32 = 440.0;
 const SAMPLE_RATE: f32 = 192000.0; // Standard audio sample rate
-const DURATION: f32 = 15.0; // 15 seconds for the A4 note
+const DURATION: f32 = 30.0; // 15 seconds for the A4 note
                             //
 mod audio;
 mod chirp;
@@ -46,7 +46,7 @@ impl MainUI {
         let start_time = Instant::now();
         let is_playing = false;
         let started_sound = false;
-        let zoom_factor = 1.0;
+        let zoom_factor = 0.0;
         let x_offset = 0.0;
         let points_vector = vec![];
         let (for_tx, for_rx): (Sender<f32>, Receiver<f32>) = mpsc::channel();
@@ -171,7 +171,7 @@ impl MainUI {
     fn paint_output_wave(&self, ui: &mut egui::Ui) {
         egui::ScrollArea::horizontal().show(ui, |ui| {
             Plot::new("Sine Wave")
-                .view_aspect(2.0) // Aspect ratio of the plot
+                // .view_aspect(2.0) // Aspect ratio of the plot
                 // .data_aspect(self.zoom_factor)
                 // .allow_drag(true)
                 .show(ui, |plot_ui| {
@@ -202,10 +202,16 @@ impl MainUI {
 
         // Plot the sine wave over time
         let samples_to_show = (max_time * SAMPLE_RATE) as usize;
+
+        let downsample_factor = 1000;
+
         let sine_wave_segment = self
             .sine_wave
             .clone()
-            .take(samples_to_show)
+            .enumerate()
+            .filter(|(i, _)| i % downsample_factor == 0)
+            .take(samples_to_show / downsample_factor)
+            .map(|(_, val)| val)
             .collect::<Vec<f32>>();
 
         let points: Vec<[f64; 2]> = sine_wave_segment
