@@ -285,22 +285,6 @@ fn main() {
     );
 }
 
-// WebAssembly entry point
-#[cfg(target_arch = "wasm32")]
-fn wasm_main() {
-    use wasm_bindgen::prelude::*;
-
-    #[wasm_bindgen(start)]
-    pub fn start() -> Result<(), JsValue> {
-        let mut app = MainUI::new(&eframe::CreationContext {
-            web_info: eframe::WebInfo {
-                canvas_id: "the_canvas_id".to_owned(),
-            },
-        });
-        egui_web::start("the_canvas_id", Box::new(app))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::chirp::Chirp;
