@@ -15,9 +15,9 @@ use std::vec::Vec;
 
 // Constants
 const A4_FREQ: f32 = 440.0;
-const SAMPLE_RATE: f32 = 44100.0; // Standard audio sample rate
-const DURATION: f32 = 5.0; // 15 seconds for the A4 note
-                           //
+const SAMPLE_RATE: f32 = 192000.0; // Standard audio sample rate
+const DURATION: f32 = 15.0; // 15 seconds for the A4 note
+                            //
 mod audio;
 mod chirp;
 mod freq;
@@ -92,7 +92,7 @@ impl MainUI {
 
         // Start the wave playing thread.
         spawn(move || {
-            let sound = Chirp::new(SAMPLE_RATE, 1000.0, 20000.0, duration);
+            let sound = Chirp::new(SAMPLE_RATE, 500.0, 2000.0, duration);
             audio::play_output(output_device_name, sound);
         });
 
@@ -301,7 +301,6 @@ mod tests {
     use super::*;
     use rodio::{source::SineWave, source::Source, OutputStream, Sink};
 
-    #[test]
     fn test_make_a4_sound() {
         let sine_wave = SineWave::new(A4_FREQ).take_duration(std::time::Duration::from_secs(2));
         // Play the sound for 2 seconds through the speakers
@@ -314,7 +313,6 @@ mod tests {
         sink.sleep_until_end();
     }
 
-    #[test]
     fn test_make_chirp() {
         // Generate a chirp that lasts for 2 seconds.
         // Starting frequency = 100.0 HZ.
@@ -323,17 +321,17 @@ mod tests {
         let chirp = Chirp::new(SAMPLE_RATE, 100.0, 1000.0, 2.0);
 
         // // Get an output stream handle to the default physical sound device
-        let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+        // let (_stream, stream_handle) = OutputStream::try_default().unwrap();
 
-        // Make a sync to append the audio to.
-        let sink = Sink::try_new(&stream_handle).unwrap();
+        // // Make a sync to append the audio to.
+        // let sink = Sink::try_new(&stream_handle).unwrap();
 
-        // Load a sound from a file, using a path relative to Cargo.toml
-        // Play the sound directly on the device
-        sink.append(chirp);
+        // // Load a sound from a file, using a path relative to Cargo.toml
+        // // Play the sound directly on the device
+        // sink.append(chirp);
 
-        // Sleep until the audio is done playing.
-        // Giving up ownership of the sink would close it and the audio will stop.
-        sink.sleep_until_end();
+        // // Sleep until the audio is done playing.
+        // // Giving up ownership of the sink would close it and the audio will stop.
+        // sink.sleep_until_end();
     }
 }

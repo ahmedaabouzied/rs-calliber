@@ -78,7 +78,7 @@ pub fn capture_input(
     input_stream.play().unwrap();
     std::thread::sleep(std::time::Duration::from_secs_f32(duration));
     let locked_data = buffer.lock().unwrap();
-    let ffr = freq::freq_of_resonance(locked_data.clone(), sample_rate);
+    let ffr = freq::freq_of_resonance(locked_data.clone(), sample_rate, None);
     for_tx.send(ffr).unwrap();
 }
 

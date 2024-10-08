@@ -622,6 +622,7 @@ dependencies = [
  "egui_plot",
  "egui_web",
  "env_logger",
+ "hound",
  "log",
  "rodio",
  "rustfft",
