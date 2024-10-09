@@ -38,6 +38,7 @@ struct MainUI {
     last_for: f32,
     input_device_name: String,
     output_device_name: String,
+    drain_graphs: bool,
 }
 
 impl MainUI {
@@ -51,6 +52,7 @@ impl MainUI {
         let points_vector = vec![];
         let (for_tx, for_rx): (Sender<f32>, Receiver<f32>) = mpsc::channel();
         let captured_buffer = Arc::new(Mutex::new(Vec::<f32>::new()));
+        let drain_graphs = true;
         Self {
             sine_wave,
             duration: DURATION,
@@ -66,6 +68,7 @@ impl MainUI {
             last_for: 0.0,
             input_device_name: "Default".to_string(),
             output_device_name: "Default".to_string(),
+            drain_graphs,
         }
     }
 
@@ -125,6 +128,12 @@ impl MainUI {
         });
     }
 
+    fn paint_drain_graphs_checkbox(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.checkbox(&mut self.drain_graphs, "Drain graphs");
+        });
+    }
+
     fn paint_sound_devices_dropdown(&mut self, ui: &mut egui::Ui) {
         let input_devices = audio::get_input_devices().unwrap();
         let output_devices = audio::get_output_devices().unwrap();
@@ -172,9 +181,11 @@ impl MainUI {
         egui::ScrollArea::horizontal().show(ui, |ui| {
             let mut points_to_plot = self.points_vector.clone();
             let points_to_plot_len = points_to_plot.len();
-            let downsampled_sample_rate = (SAMPLE_RATE / DOWNSAMPLE_FACTOR) as usize;
-            if points_to_plot.len() > downsampled_sample_rate * 5 {
-                points_to_plot.drain(0..points_to_plot_len - downsampled_sample_rate * 5);
+            if self.drain_graphs {
+                let downsampled_sample_rate = (SAMPLE_RATE / DOWNSAMPLE_FACTOR) as usize;
+                if points_to_plot.len() > downsampled_sample_rate * 5 {
+                    points_to_plot.drain(0..points_to_plot_len - downsampled_sample_rate * 5);
+                }
             }
             Plot::new("Sine Wave")
                 .height(240.0)
@@ -243,6 +254,7 @@ impl eframe::App for MainUI {
                 self.paint_window_title(ui);
                 self.paint_start_and_stop_buttons(ui);
                 self.paint_sound_devices_dropdown(ui);
+                self.paint_drain_graphs_checkbox(ui);
                 self.paint_zoom_controls(ui);
                 self.paint_output_wave(ui);
                 self.paint_scroll_controls(ui);
@@ -271,8 +283,10 @@ impl eframe::App for MainUI {
                     .map(|(i, x)| [(i as f32 / 44100.0) as f64, x as f64])
                     .collect();
 
-                if buf_len > 44100 * 5 {
-                    points.drain(0..buf_len - 44100 * 5);
+                if self.drain_graphs {
+                    if buf_len > 44100 * 5 {
+                        points.drain(0..buf_len - 44100 * 5);
+                    }
                 }
 
                 let line = Line::new(PlotPoints::new(points));
