@@ -262,13 +262,20 @@ impl eframe::App for MainUI {
                     self.paint_frequency_of_resonance(ui);
                 }
 
-                let points: PlotPoints = captured_buffer
-                    .iter()
+                let buffer_to_plot = captured_buffer.clone();
+                let buf_len = buffer_to_plot.len();
+
+                let mut points: Vec<[f64; 2]> = buffer_to_plot
+                    .into_iter()
                     .enumerate()
-                    .map(|(i, &x)| [(i / 100) as f64, x as f64])
+                    .map(|(i, x)| [(i as f32 / 44100.0) as f64, x as f64])
                     .collect();
 
-                let line = Line::new(points);
+                if buf_len > 44100 * 5 {
+                    points.drain(0..buf_len - 44100 * 5);
+                }
+
+                let line = Line::new(PlotPoints::new(points));
                 let plot = Plot::new("Received audio").height(240.0);
                 plot.show(ui, |plot_ui| {
                     plot_ui.line(line);

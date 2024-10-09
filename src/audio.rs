@@ -64,13 +64,6 @@ pub fn capture_input(
             move |data: &[f32], _: &cpal::InputCallbackInfo| {
                 let mut locked_data = data_clone.lock().unwrap();
                 locked_data.extend_from_slice(data);
-                log::debug!("capturing data");
-
-                // Uncomment this to drain 5 seconds from the captured buffer.
-                let buffer_len = locked_data.len();
-                if buffer_len > 44100 * 5 {
-                    locked_data.drain(0..buffer_len - 44100 * 5);
-                }
             },
             move |err| {
                 eprintln!("An error occurred on the input stream: {}", err);
