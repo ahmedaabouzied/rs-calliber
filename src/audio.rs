@@ -66,6 +66,7 @@ pub fn capture_input(
                 locked_data.extend_from_slice(data);
                 log::debug!("capturing data");
 
+                // Uncomment this to drain 5 seconds from the captured buffer.
                 let buffer_len = locked_data.len();
                 if buffer_len > 44100 * 5 {
                     locked_data.drain(0..buffer_len - 44100 * 5);

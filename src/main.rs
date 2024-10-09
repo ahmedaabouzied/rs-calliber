@@ -16,8 +16,8 @@ use tokio::spawn;
 // Constants
 const A4_FREQ: f32 = 440.0;
 const SAMPLE_RATE: f32 = 192000.0; // Standard audio sample rate
+const DOWNSAMPLE_FACTOR: f32 = 1000.0;
 const DURATION: f32 = 30.0; // 15 seconds for the A4 note
-                            //
 mod audio;
 mod chirp;
 mod freq;
@@ -170,12 +170,17 @@ impl MainUI {
 
     fn paint_output_wave(&self, ui: &mut egui::Ui) {
         egui::ScrollArea::horizontal().show(ui, |ui| {
+            let mut points_to_plot = self.points_vector.clone();
+            let points_to_plot_len = points_to_plot.len();
+            let downsampled_sample_rate = (SAMPLE_RATE / DOWNSAMPLE_FACTOR) as usize;
+            if points_to_plot.len() > downsampled_sample_rate * 5 {
+                points_to_plot.drain(0..points_to_plot_len - downsampled_sample_rate * 5);
+            }
             Plot::new("Sine Wave")
-                .view_aspect(2.0) // Aspect ratio of the plot
-                // .data_aspect(self.zoom_factor)
+                .height(240.0)
                 .allow_drag(true)
                 .show(ui, |plot_ui| {
-                    plot_ui.line(Line::new(PlotPoints::new(self.points_vector.clone())));
+                    plot_ui.line(Line::new(PlotPoints::new(points_to_plot)));
                 });
         });
     }
@@ -203,8 +208,7 @@ impl MainUI {
         // Plot the sine wave over time
         let samples_to_show = (max_time * SAMPLE_RATE) as usize;
 
-        let downsample_factor = 1000;
-
+        let downsample_factor = DOWNSAMPLE_FACTOR as usize;
         let sine_wave_segment = self
             .sine_wave
             .clone()
@@ -218,6 +222,7 @@ impl MainUI {
             .iter()
             .enumerate()
             .map(|(i, &val)| {
+                // Multiply by tghe downsample_factor to restore the units to seconds.
                 let time = (i * downsample_factor) as f32 / SAMPLE_RATE;
                 [time as f64, val as f64]
             })
@@ -260,11 +265,11 @@ impl eframe::App for MainUI {
                 let points: PlotPoints = captured_buffer
                     .iter()
                     .enumerate()
-                    .map(|(i, &x)| [i as f64, x as f64])
+                    .map(|(i, &x)| [(i / 100) as f64, x as f64])
                     .collect();
 
                 let line = Line::new(points);
-                let plot = Plot::new("Received audio").view_aspect(2.0);
+                let plot = Plot::new("Received audio").height(240.0);
                 plot.show(ui, |plot_ui| {
                     plot_ui.line(line);
                 });
