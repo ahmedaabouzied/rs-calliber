@@ -1,8 +1,10 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use dasp::sample::FromSample;
+use hound::{WavSpec, WavWriter};
 use rodio::Sample;
 use rodio::Source;
 use rodio::{OutputStream, Sink};
+use std::path::Path;
 
 use std::sync::mpsc::Sender;
 use std::sync::{
@@ -55,6 +57,9 @@ pub fn capture_input(
     for_tx: Sender<f32>,
     is_playing: Arc<AtomicBool>,
 ) {
+    if !is_playing.load(Ordering::SeqCst) {
+        return;
+    }
     let input_device = select_input_device(input_device_name);
     let config_range = input_device.default_input_config().unwrap();
 
@@ -96,4 +101,28 @@ where
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
     sink.stop();
+}
+
+pub fn save_mono_vec_to_wav(
+    data: &Vec<f32>,
+    file_path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let spec = WavSpec {
+        channels: 1,        // Mono audio has 1 channel
+        sample_rate: 44100, // Set your sample rate here
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+
+    let mut writer = WavWriter::create(file_path, spec)?;
+
+    for sample in data {
+        // Convert f32 to i16
+        let mono_sample = (*sample * i16::MAX as f32) as i16;
+
+        writer.write_sample(mono_sample)?;
+    }
+
+    writer.finalize()?;
+    Ok(())
 }

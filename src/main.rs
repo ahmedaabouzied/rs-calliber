@@ -381,12 +381,15 @@ impl eframe::App for MainUI {
                     ui.label("Calculating frequency of resonance...");
                 }
 
-                let captured_buffer = self.captured_buffer.lock().unwrap();
-                if let Ok(freq) = self.for_rx.try_recv() {
-                    self.last_for = freq;
+                let mut buffer_to_plot = Vec::new();
+                {
+                    let captured_buffer = self.captured_buffer.lock().unwrap();
+                    if let Ok(freq) = self.for_rx.try_recv() {
+                        self.last_for = freq;
+                    }
+                    buffer_to_plot = captured_buffer.clone();
                 }
 
-                let buffer_to_plot = captured_buffer.clone();
                 let buf_len = buffer_to_plot.len();
 
                 let mut points: Vec<[f64; 2]> = buffer_to_plot
@@ -410,11 +413,19 @@ impl eframe::App for MainUI {
                         plot.show(ui, |plot_ui| {
                             plot_ui.line(line);
                         });
+                        if ui.button("Export to wav").clicked {
+                            if let Some(path) = rfd::FileDialog::new()
+                                .set_file_name("input.wav")
+                                .save_file()
+                            {
+                                let captured_buffer = self.captured_buffer.lock().unwrap();
+                                audio::save_mono_vec_to_wav(&captured_buffer, &path).unwrap();
+                            }
+                        };
                         // Request a repaint to keep the animation running
                         ctx.request_repaint();
                     });
                 });
-                ui.add_space(20.0);
             });
         });
     }
