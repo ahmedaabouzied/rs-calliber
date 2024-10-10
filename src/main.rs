@@ -4,7 +4,6 @@ use egui_plot::{Line, Plot, PlotPoints};
 
 // Audio
 use cpal::traits::DeviceTrait;
-use rodio::source::SineWave;
 
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
@@ -29,6 +28,9 @@ use chirp::Chirp;
 struct MainUI {
     current_chirp: Chirp,
     duration: f32, // Default is 5.0;
+    chirp_start: f32,
+    chirp_end: f32,
+    output_sample_rate: f32,
     is_playing: Arc<AtomicBool>,
     started_sound: bool,
     start_time: Instant,
@@ -44,7 +46,11 @@ struct MainUI {
 
 impl MainUI {
     fn new(_cc: &eframe::CreationContext<'_>) -> Self {
-        let current_chirp = Chirp::new(DEFAULT_SAMPLE_RATE, 0.0, 20000.0, DEFAULT_DURATION);
+        let chirp_start = 500.0;
+        let chirp_end = 20_000.0;
+        let output_sample_rate = DEFAULT_SAMPLE_RATE;
+        let duration = DEFAULT_DURATION;
+        let current_chirp = Chirp::new(output_sample_rate, chirp_start, chirp_end, duration);
         let start_time = Instant::now();
         let is_playing = Arc::new(AtomicBool::new(false));
         let started_sound = false;
@@ -53,8 +59,11 @@ impl MainUI {
         let captured_buffer = Arc::new(Mutex::new(Vec::<f32>::new()));
         let drain_graphs = true;
         Self {
+            chirp_start,
+            chirp_end,
+            output_sample_rate,
             current_chirp,
-            duration: DEFAULT_DURATION,
+            duration,
             is_playing,
             started_sound,
             start_time,
@@ -149,6 +158,75 @@ impl MainUI {
             }
             if let Ok(parsed_val) = val.parse::<f32>() {
                 self.duration = parsed_val;
+            } else {
+                ui.colored_label(
+                    egui::Color32::RED,
+                    "Invalid input, it should be floating number in the form of 100.0",
+                );
+            }
+        });
+    }
+
+    fn paint_chirp_start_input(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.label("Chrip start frequency: ");
+            if self.is_playing.load(Ordering::SeqCst) {
+                ui.disable();
+            }
+            let mut val = format!("{}", self.chirp_start).to_string();
+            ui.add(egui::TextEdit::singleline(&mut val));
+            ui.label("Hz");
+            if val == "" {
+                self.chirp_start = 0.0;
+            }
+            if let Ok(parsed_val) = val.parse::<f32>() {
+                self.chirp_start = parsed_val;
+            } else {
+                ui.colored_label(
+                    egui::Color32::RED,
+                    "Invalid input, it should be floating number in the form of 100.0",
+                );
+            }
+        });
+    }
+
+    fn paint_chirp_end_input(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.label("Chrip end frequency: ");
+            if self.is_playing.load(Ordering::SeqCst) {
+                ui.disable();
+            }
+            let mut val = format!("{}", self.chirp_end).to_string();
+            ui.add(egui::TextEdit::singleline(&mut val));
+            ui.label("Hz");
+            if val == "" {
+                self.chirp_end = 0.0;
+            }
+            if let Ok(parsed_val) = val.parse::<f32>() {
+                self.chirp_end = parsed_val;
+            } else {
+                ui.colored_label(
+                    egui::Color32::RED,
+                    "Invalid input, it should be floating number in the form of 100.0",
+                );
+            }
+        });
+    }
+
+    fn paint_output_sample_rate_input(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.label("Chrip sample rate: ");
+            if self.is_playing.load(Ordering::SeqCst) {
+                ui.disable();
+            }
+            let mut val = format!("{}", self.output_sample_rate).to_string();
+            ui.add(egui::TextEdit::singleline(&mut val));
+            ui.label("Hz");
+            if val == "" {
+                self.output_sample_rate = 0.0;
+            }
+            if let Ok(parsed_val) = val.parse::<f32>() {
+                self.output_sample_rate = parsed_val;
             } else {
                 ui.colored_label(
                     egui::Color32::RED,
@@ -266,6 +344,9 @@ impl eframe::App for MainUI {
                         ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
                             ui.label(egui::RichText::new("Chrip controls"));
                             self.paint_duration_input(ui);
+                            self.paint_chirp_start_input(ui);
+                            self.paint_chirp_end_input(ui);
+                            self.paint_output_sample_rate_input(ui);
                         });
                     });
                 });
