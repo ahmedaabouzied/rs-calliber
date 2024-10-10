@@ -362,6 +362,17 @@ impl eframe::App for MainUI {
                     });
                 });
                 ui.add_space(20.0);
+                egui::Frame::group(ui.style()).show(ui, |ui| {
+                    ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
+                        ui.label(egui::RichText::new("Results"));
+                        if !self.is_playing.load(Ordering::SeqCst) {
+                            self.paint_frequency_of_resonance(ui);
+                        } else {
+                            ui.label("Capturing input ...");
+                        }
+                    });
+                });
+                ui.add_space(20.0);
                 self.paint_output_wave(ui);
 
                 if self.is_playing.load(Ordering::SeqCst) {
@@ -404,16 +415,6 @@ impl eframe::App for MainUI {
                     });
                 });
                 ui.add_space(20.0);
-                egui::Frame::group(ui.style()).show(ui, |ui| {
-                    ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
-                        ui.label(egui::RichText::new("Results"));
-                        if !self.is_playing.load(Ordering::SeqCst) {
-                            self.paint_frequency_of_resonance(ui);
-                        } else {
-                            ui.label("Capturing input ...");
-                        }
-                    });
-                });
             });
         });
     }
