@@ -416,6 +416,7 @@ impl eframe::App for MainUI {
                         if ui.button("Export to wav").clicked {
                             if let Some(path) = rfd::FileDialog::new()
                                 .set_file_name("input.wav")
+                                .set_can_create_directories(true)
                                 .save_file()
                             {
                                 let captured_buffer = self.captured_buffer.lock().unwrap();
