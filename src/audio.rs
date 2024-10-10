@@ -105,12 +105,13 @@ where
 
 pub fn save_mono_vec_to_wav(
     data: &Vec<f32>,
+    sample_rate: u32,
     file_path: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let spec = WavSpec {
-        channels: 1,        // Mono audio has 1 channel
-        sample_rate: 44100, // Set your sample rate here
-        bits_per_sample: 16,
+        channels: 1, // Mono audio has 1 channel
+        sample_rate,
+        bits_per_sample: 32,
         sample_format: hound::SampleFormat::Int,
     };
 
@@ -118,7 +119,7 @@ pub fn save_mono_vec_to_wav(
 
     for sample in data {
         // Convert f32 to i16
-        let mono_sample = (*sample * i16::MAX as f32) as i16;
+        let mono_sample = *sample * i16::MAX as f32;
 
         writer.write_sample(mono_sample)?;
     }

@@ -17,6 +17,7 @@ use std::vec::Vec;
 
 // Constants
 const DEFAULT_SAMPLE_RATE: f32 = 192000.0;
+const DEFAULT_CAPTURED_INPUT_SAMPLE_RATE: f32 = 44100.0;
 const DEFAULT_DOWNSAMPLE_FACTOR: f32 = 1000.0;
 const DEFAULT_DURATION: f32 = 5.0;
 
@@ -31,6 +32,7 @@ struct MainUI {
     chirp_start: f32,
     chirp_end: f32,
     output_sample_rate: f32,
+    captured_input_sample_rate: f32,
     is_playing: Arc<AtomicBool>,
     started_sound: bool,
     start_time: Instant,
@@ -49,6 +51,7 @@ impl MainUI {
         let chirp_start = 500.0;
         let chirp_end = 20_000.0;
         let output_sample_rate = DEFAULT_SAMPLE_RATE;
+        let captured_input_sample_rate = DEFAULT_CAPTURED_INPUT_SAMPLE_RATE;
         let duration = DEFAULT_DURATION;
         let current_chirp = Chirp::new(output_sample_rate, chirp_start, chirp_end, duration);
         let start_time = Instant::now();
@@ -62,6 +65,7 @@ impl MainUI {
             chirp_start,
             chirp_end,
             output_sample_rate,
+            captured_input_sample_rate,
             current_chirp,
             duration,
             is_playing,
@@ -236,6 +240,29 @@ impl MainUI {
         });
     }
 
+    fn paint_captured_input_sample_rate(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.label("Captured input sample rate: ");
+            if self.is_playing.load(Ordering::SeqCst) {
+                ui.disable();
+            }
+            let mut val = format!("{}", self.captured_input_sample_rate).to_string();
+            ui.add(egui::TextEdit::singleline(&mut val));
+            ui.label("Hz");
+            if val == "" {
+                self.captured_input_sample_rate = 0.0;
+            }
+            if let Ok(parsed_val) = val.parse::<f32>() {
+                self.captured_input_sample_rate = parsed_val;
+            } else {
+                ui.colored_label(
+                    egui::Color32::RED,
+                    "Invalid input, it should be floating number in the form of 100.0",
+                );
+            }
+        });
+    }
+
     fn paint_sound_devices_dropdown(&mut self, ui: &mut egui::Ui) {
         let input_devices = audio::get_input_devices().unwrap();
         let output_devices = audio::get_output_devices().unwrap();
@@ -347,6 +374,7 @@ impl eframe::App for MainUI {
                             self.paint_chirp_start_input(ui);
                             self.paint_chirp_end_input(ui);
                             self.paint_output_sample_rate_input(ui);
+                            self.paint_captured_input_sample_rate(ui);
                         });
                     });
                 });
@@ -395,12 +423,17 @@ impl eframe::App for MainUI {
                 let mut points: Vec<[f64; 2]> = buffer_to_plot
                     .into_iter()
                     .enumerate()
-                    .map(|(i, x)| [(i as f32 / 44100.0) as f64, x as f64])
+                    .map(|(i, x)| {
+                        [
+                            (i as f32 / self.captured_input_sample_rate) as f64,
+                            x as f64,
+                        ]
+                    })
                     .collect();
 
                 if self.drain_graphs {
-                    if buf_len > 44100 * 5 {
-                        points.drain(0..buf_len - 44100 * 5);
+                    if buf_len > self.captured_input_sample_rate as usize * 5 {
+                        points.drain(0..buf_len - self.captured_input_sample_rate as usize * 5);
                     }
                 }
 
@@ -420,7 +453,9 @@ impl eframe::App for MainUI {
                                 .save_file()
                             {
                                 let captured_buffer = self.captured_buffer.lock().unwrap();
-                                audio::save_mono_vec_to_wav(&captured_buffer, &path).unwrap();
+                                let sample_rate = self.captured_input_sample_rate as u32;
+                                audio::save_mono_vec_to_wav(&captured_buffer, sample_rate, &path)
+                                    .unwrap();
                             }
                         };
                         // Request a repaint to keep the animation running
