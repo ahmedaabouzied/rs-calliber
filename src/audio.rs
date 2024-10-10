@@ -4,6 +4,8 @@ use hound::{WavSpec, WavWriter};
 use rodio::Sample;
 use rodio::Source;
 use rodio::{OutputStream, Sink};
+use std::fs::File;
+use std::io::Write;
 use std::path::Path;
 
 use std::sync::mpsc::Sender;
@@ -125,5 +127,22 @@ pub fn save_mono_vec_to_wav(
     }
 
     writer.finalize()?;
+    Ok(())
+}
+
+pub fn save_mono_vec_with_db_to_csv(
+    data: &Vec<f32>,
+    sample_rate: u32,
+    file_path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut file = File::create(file_path)?;
+    writeln!(file, "Time (s),Sample Value,Amplitude (dB)")?; // Add header
+
+    for (i, sample) in data.iter().enumerate() {
+        let time = i as f32 / sample_rate as f32;
+        let db_value = 20.0 * sample.abs().log10(); // Calculate amplitude in dB
+        writeln!(file, "{},{},{}", time, sample, db_value)?;
+    }
+
     Ok(())
 }

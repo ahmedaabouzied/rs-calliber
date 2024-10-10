@@ -449,18 +449,40 @@ impl eframe::App for MainUI {
                         if self.is_playing.load(Ordering::SeqCst) {
                             ui.disable();
                         }
-                        if ui.button("Export to wav").clicked {
-                            if let Some(path) = rfd::FileDialog::new()
-                                .set_file_name("input.wav")
-                                .set_can_create_directories(true)
-                                .save_file()
-                            {
-                                let captured_buffer = self.captured_buffer.lock().unwrap();
-                                let sample_rate = self.captured_input_sample_rate as u32;
-                                audio::save_mono_vec_to_wav(&captured_buffer, sample_rate, &path)
+                        ui.horizontal(|ui| {
+                            if ui.button("Export to wav").clicked {
+                                if let Some(path) = rfd::FileDialog::new()
+                                    .set_file_name("captured.wav")
+                                    .set_can_create_directories(true)
+                                    .save_file()
+                                {
+                                    let captured_buffer = self.captured_buffer.lock().unwrap();
+                                    let sample_rate = self.captured_input_sample_rate as u32;
+                                    audio::save_mono_vec_to_wav(
+                                        &captured_buffer,
+                                        sample_rate,
+                                        &path,
+                                    )
                                     .unwrap();
-                            }
-                        };
+                                }
+                            };
+                            if ui.button("Export to CSV (Excel)").clicked {
+                                if let Some(path) = rfd::FileDialog::new()
+                                    .set_file_name("captured.csv")
+                                    .set_can_create_directories(true)
+                                    .save_file()
+                                {
+                                    let captured_buffer = self.captured_buffer.lock().unwrap();
+                                    let sample_rate = self.captured_input_sample_rate as u32;
+                                    audio::save_mono_vec_with_db_to_csv(
+                                        &captured_buffer,
+                                        sample_rate,
+                                        &path,
+                                    )
+                                    .unwrap();
+                                }
+                            };
+                        });
                         // Request a repaint to keep the animation running
                         ctx.request_repaint();
                     });
