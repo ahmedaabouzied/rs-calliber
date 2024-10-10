@@ -446,6 +446,9 @@ impl eframe::App for MainUI {
                         plot.show(ui, |plot_ui| {
                             plot_ui.line(line);
                         });
+                        if self.is_playing.load(Ordering::SeqCst) {
+                            ui.disable();
+                        }
                         if ui.button("Export to wav").clicked {
                             if let Some(path) = rfd::FileDialog::new()
                                 .set_file_name("input.wav")
