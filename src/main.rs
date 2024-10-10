@@ -1,33 +1,11 @@
 // GUI
 use eframe::egui;
-use egui_plot::{Line, Plot, PlotPoints};
-
-// Audio
-use cpal::traits::DeviceTrait;
-
-use std::sync::mpsc;
-use std::sync::mpsc::{Receiver, Sender};
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc, Mutex,
-};
-use std::thread::spawn;
-use std::time::Instant;
-use std::vec::Vec;
-
-// Constants
-const DEFAULT_SAMPLE_RATE: f32 = 192000.0;
-const DEFAULT_CAPTURED_INPUT_SAMPLE_RATE: f32 = 44100.0;
-const DEFAULT_DOWNSAMPLE_FACTOR: f32 = 1000.0;
-const DEFAULT_DURATION: f32 = 5.0;
 
 mod audio;
 mod calibrate;
 mod chirp;
 mod detect;
 mod freq;
-
-use chirp::Chirp;
 
 struct MainUI {
     selected_tab: u8,
