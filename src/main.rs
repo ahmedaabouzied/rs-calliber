@@ -6,6 +6,7 @@ mod calibrate;
 mod chirp;
 mod detect;
 mod freq;
+mod wave;
 
 struct MainUI {
     selected_tab: u8,
