@@ -201,12 +201,18 @@ impl MainUI {
                     points_to_plot.drain(0..points_to_plot_len - downsampled_sample_rate * 5);
                 }
             }
-            Plot::new("Sine Wave")
-                .height(240.0)
-                .allow_drag(true)
-                .show(ui, |plot_ui| {
-                    plot_ui.line(Line::new(PlotPoints::new(points_to_plot)));
+
+            egui::Frame::group(ui.style()).show(ui, |ui| {
+                ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
+                    ui.label(egui::RichText::new("Chirp output"));
+                    Plot::new("Sine Wave")
+                        .height(240.0)
+                        .allow_drag(true)
+                        .show(ui, |plot_ui| {
+                            plot_ui.line(Line::new(PlotPoints::new(points_to_plot)));
+                        });
                 });
+            });
         });
     }
 
@@ -254,6 +260,7 @@ impl eframe::App for MainUI {
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::scroll_area::ScrollArea::vertical().show(ui, |ui| {
                 self.paint_window_title(ui);
+                ui.add_space(20.0);
                 egui::Frame::group(ui.style()).show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
@@ -262,6 +269,7 @@ impl eframe::App for MainUI {
                         });
                     });
                 });
+                ui.add_space(20.0);
                 ui.horizontal(|ui| {
                     egui::Frame::group(ui.style()).show(ui, |ui| {
                         ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
@@ -272,6 +280,7 @@ impl eframe::App for MainUI {
                         });
                     });
                 });
+                ui.add_space(20.0);
                 self.paint_output_wave(ui);
 
                 if self.is_playing.load(Ordering::SeqCst) {
@@ -281,12 +290,8 @@ impl eframe::App for MainUI {
                 }
 
                 let captured_buffer = self.captured_buffer.lock().unwrap();
-                ui.label(format!("Captured buffer len {}", captured_buffer.len()));
                 if let Ok(freq) = self.for_rx.try_recv() {
                     self.last_for = freq;
-                }
-                if !self.is_playing.load(Ordering::SeqCst) {
-                    self.paint_frequency_of_resonance(ui);
                 }
 
                 let buffer_to_plot = captured_buffer.clone();
@@ -304,13 +309,30 @@ impl eframe::App for MainUI {
                     }
                 }
 
-                let line = Line::new(PlotPoints::new(points));
-                let plot = Plot::new("Received audio").height(240.0);
-                plot.show(ui, |plot_ui| {
-                    plot_ui.line(line);
+                ui.add_space(20.0);
+                egui::Frame::group(ui.style()).show(ui, |ui| {
+                    ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
+                        ui.label(egui::RichText::new("Captured Input"));
+                        let line = Line::new(PlotPoints::new(points));
+                        let plot = Plot::new("Received audio").height(240.0);
+                        plot.show(ui, |plot_ui| {
+                            plot_ui.line(line);
+                        });
+                        // Request a repaint to keep the animation running
+                        ctx.request_repaint();
+                    });
                 });
-                // Request a repaint to keep the animation running
-                ctx.request_repaint();
+                ui.add_space(20.0);
+                egui::Frame::group(ui.style()).show(ui, |ui| {
+                    ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
+                        ui.label(egui::RichText::new("Results"));
+                        if !self.is_playing.load(Ordering::SeqCst) {
+                            self.paint_frequency_of_resonance(ui);
+                        } else {
+                            ui.label("Capturing input ...");
+                        }
+                    });
+                });
             });
         });
     }
