@@ -60,7 +60,6 @@ pub fn capture_input(
 
     let data_clone = Arc::clone(&buffer);
 
-    log::debug!("starting input stream");
     let input_stream = input_device
         .build_input_stream(
             &config_range.into(),
@@ -74,11 +73,10 @@ pub fn capture_input(
             Option::None,
         )
         .unwrap();
-    input_stream.play().unwrap();
     while is_playing.load(Ordering::SeqCst) {
+        input_stream.play().unwrap();
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
-    input_stream.play().unwrap();
     let locked_data = buffer.lock().unwrap();
     let ffr = freq::freq_of_resonance(locked_data.clone(), sample_rate, None);
     for_tx.send(ffr).unwrap();

@@ -17,18 +17,18 @@ use std::time::Instant;
 use std::vec::Vec;
 
 // Constants
-const A4_FREQ: f32 = 440.0;
-const SAMPLE_RATE: f32 = 192000.0; // Standard audio sample rate
-const DOWNSAMPLE_FACTOR: f32 = 1000.0;
-const DURATION: f32 = 5.0;
+const DEFAULT_SAMPLE_RATE: f32 = 192000.0;
+const DEFAULT_DOWNSAMPLE_FACTOR: f32 = 1000.0;
+const DEFAULT_DURATION: f32 = 5.0;
+
 mod audio;
 mod chirp;
 mod freq;
 use chirp::Chirp;
 
 struct MainUI {
-    sine_wave: SineWave,
-    duration: f32,
+    current_chirp: Chirp,
+    duration: f32, // Default is 5.0;
     is_playing: Arc<AtomicBool>,
     started_sound: bool,
     start_time: Instant,
@@ -44,7 +44,7 @@ struct MainUI {
 
 impl MainUI {
     fn new(_cc: &eframe::CreationContext<'_>) -> Self {
-        let sine_wave = SineWave::new(A4_FREQ);
+        let current_chirp = Chirp::new(DEFAULT_SAMPLE_RATE, 0.0, 20000.0, DEFAULT_DURATION);
         let start_time = Instant::now();
         let is_playing = Arc::new(AtomicBool::new(false));
         let started_sound = false;
@@ -53,8 +53,8 @@ impl MainUI {
         let captured_buffer = Arc::new(Mutex::new(Vec::<f32>::new()));
         let drain_graphs = true;
         Self {
-            sine_wave,
-            duration: DURATION,
+            current_chirp,
+            duration: DEFAULT_DURATION,
             is_playing,
             started_sound,
             start_time,
@@ -94,8 +94,9 @@ impl MainUI {
         // Start the wave playing thread.
         let duration_clone = duration.clone();
         let is_playing = self.is_playing.clone();
+        let sound = Chirp::new(DEFAULT_SAMPLE_RATE, 500.0, 20000.0, duration_clone);
+        self.current_chirp = sound.clone();
         spawn(move || {
-            let sound = Chirp::new(SAMPLE_RATE, 500.0, 2000.0, duration_clone);
             audio::play_output(output_device_name, sound, is_playing);
         });
 
@@ -104,7 +105,7 @@ impl MainUI {
         spawn(move || {
             audio::capture_input(
                 input_device_name,
-                SAMPLE_RATE,
+                DEFAULT_SAMPLE_RATE,
                 captured_buffer,
                 for_tx,
                 is_playing,
@@ -194,7 +195,8 @@ impl MainUI {
             let mut points_to_plot = self.points_vector.clone();
             let points_to_plot_len = points_to_plot.len();
             if self.drain_graphs {
-                let downsampled_sample_rate = (SAMPLE_RATE / DOWNSAMPLE_FACTOR) as usize;
+                let downsampled_sample_rate =
+                    (DEFAULT_SAMPLE_RATE / DEFAULT_DOWNSAMPLE_FACTOR) as usize;
                 if points_to_plot.len() > downsampled_sample_rate * 5 {
                     points_to_plot.drain(0..points_to_plot_len - downsampled_sample_rate * 5);
                 }
@@ -217,11 +219,11 @@ impl MainUI {
         let max_time = elapsed.min(self.duration);
 
         // Plot the sine wave over time
-        let samples_to_show = (max_time * SAMPLE_RATE) as usize;
+        let samples_to_show = (max_time * DEFAULT_SAMPLE_RATE) as usize;
 
-        let downsample_factor = DOWNSAMPLE_FACTOR as usize;
-        let sine_wave_segment = self
-            .sine_wave
+        let downsample_factor = DEFAULT_DOWNSAMPLE_FACTOR as usize;
+        let chirp_segement = self
+            .current_chirp
             .clone()
             .enumerate()
             .filter(|(i, _)| i % downsample_factor == 0)
@@ -229,12 +231,12 @@ impl MainUI {
             .map(|(_, val)| val)
             .collect::<Vec<f32>>();
 
-        let points: Vec<[f64; 2]> = sine_wave_segment
+        let points: Vec<[f64; 2]> = chirp_segement
             .iter()
             .enumerate()
             .map(|(i, &val)| {
                 // Multiply by tghe downsample_factor to restore the units to seconds.
-                let time = (i * downsample_factor) as f32 / SAMPLE_RATE;
+                let time = (i * downsample_factor) as f32 / DEFAULT_SAMPLE_RATE;
                 [time as f64, val as f64]
             })
             .collect();
@@ -325,12 +327,12 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::chirp::Chirp;
-    use super::*;
     use rodio::{source::SineWave, source::Source, OutputStream, Sink};
 
+    #[test]
     fn test_make_a4_sound() {
-        let sine_wave = SineWave::new(A4_FREQ).take_duration(std::time::Duration::from_secs(2));
+        let a4_freq = 440.0;
+        let sine_wave = SineWave::new(a4_freq).take_duration(std::time::Duration::from_secs(2));
         // Play the sound for 2 seconds through the speakers
         // // Get an output stream handle to the default physical sound device
         let (_stream, stream_handle) = OutputStream::try_default().unwrap();
@@ -339,27 +341,5 @@ mod tests {
         // Play the sound directly on the device
         sink.append(sine_wave);
         sink.sleep_until_end();
-    }
-
-    fn test_make_chirp() {
-        // Generate a chirp that lasts for 2 seconds.
-        // Starting frequency = 100.0 HZ.
-        // End frequency = 1000.0 HZ.
-        // Sample rate = 44100.0 rate/second. Which is standard for digital audio.
-        let chirp = Chirp::new(SAMPLE_RATE, 100.0, 1000.0, 2.0);
-
-        // // Get an output stream handle to the default physical sound device
-        // let (_stream, stream_handle) = OutputStream::try_default().unwrap();
-
-        // // Make a sync to append the audio to.
-        // let sink = Sink::try_new(&stream_handle).unwrap();
-
-        // // Load a sound from a file, using a path relative to Cargo.toml
-        // // Play the sound directly on the device
-        // sink.append(chirp);
-
-        // // Sleep until the audio is done playing.
-        // // Giving up ownership of the sink would close it and the audio will stop.
-        // sink.sleep_until_end();
     }
 }
