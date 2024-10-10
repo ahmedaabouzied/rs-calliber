@@ -8,16 +8,19 @@ use rodio::source::SineWave;
 
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
+use std::thread::spawn;
 use std::time::Instant;
 use std::vec::Vec;
-use tokio::spawn;
 
 // Constants
 const A4_FREQ: f32 = 440.0;
 const SAMPLE_RATE: f32 = 192000.0; // Standard audio sample rate
 const DOWNSAMPLE_FACTOR: f32 = 1000.0;
-const DURATION: f32 = 30.0; // 15 seconds for the A4 note
+const DURATION: f32 = 5.0; // 15 seconds for the A4 note
 mod audio;
 mod chirp;
 mod freq;
@@ -26,7 +29,7 @@ use chirp::Chirp;
 struct MainUI {
     sine_wave: SineWave,
     duration: f32,
-    is_playing: bool,
+    is_playing: Arc<AtomicBool>,
     started_sound: bool,
     start_time: Instant,
     zoom_factor: f32,
@@ -45,7 +48,7 @@ impl MainUI {
     fn new(_cc: &eframe::CreationContext<'_>) -> Self {
         let sine_wave = SineWave::new(A4_FREQ);
         let start_time = Instant::now();
-        let is_playing = false;
+        let is_playing = Arc::new(AtomicBool::new(false));
         let started_sound = false;
         let zoom_factor = 0.0;
         let x_offset = 0.0;
@@ -73,12 +76,13 @@ impl MainUI {
     }
 
     fn plot(&mut self) {
-        self.is_playing = true;
+        self.is_playing.store(true, Ordering::SeqCst);
         self.start_time = Instant::now();
     }
 
     fn stop(&mut self) {
-        self.is_playing = false;
+        self.is_playing.store(false, Ordering::SeqCst);
+        self.started_sound = false;
     }
 
     fn start_sound(&mut self) {
@@ -94,20 +98,23 @@ impl MainUI {
         let output_device_name = self.output_device_name.clone();
 
         // Start the wave playing thread.
-        spawn(async move {
-            let sound = Chirp::new(SAMPLE_RATE, 500.0, 2000.0, duration);
-            audio::play_output(output_device_name, sound);
+        let duration_clone = duration.clone();
+        let is_playing = self.is_playing.clone();
+        spawn(move || {
+            let sound = Chirp::new(SAMPLE_RATE, 500.0, 2000.0, duration_clone);
+            audio::play_output(output_device_name, sound, is_playing);
         });
 
         // Start the wave capturing thread.
-        spawn(async move {
+        let is_playing = self.is_playing.clone();
+        spawn(move || {
             audio::capture_input(
                 input_device_name,
                 SAMPLE_RATE,
-                duration,
                 captured_buffer,
                 for_tx,
-            );
+                is_playing,
+            )
         });
     }
 }
@@ -241,7 +248,7 @@ impl MainUI {
         self.points_vector = points;
         // Stop playing after 15 seconds
         if elapsed >= DURATION {
-            self.is_playing = false;
+            self.is_playing.store(false, Ordering::SeqCst);
             self.started_sound = false;
         }
     }
@@ -259,7 +266,7 @@ impl eframe::App for MainUI {
                 self.paint_output_wave(ui);
                 self.paint_scroll_controls(ui);
 
-                if self.is_playing {
+                if self.is_playing.load(Ordering::SeqCst) {
                     self.start_sound();
                     self.update_outgoing_wave_graph();
                     ui.label("Calculating frequency of resonance...");
@@ -270,7 +277,7 @@ impl eframe::App for MainUI {
                 if let Ok(freq) = self.for_rx.try_recv() {
                     self.last_for = freq;
                 }
-                if !self.is_playing {
+                if !self.is_playing.load(Ordering::SeqCst) {
                     self.paint_frequency_of_resonance(ui);
                 }
 
@@ -301,8 +308,7 @@ impl eframe::App for MainUI {
     }
 }
 
-#[tokio::main]
-async fn main() {
+fn main() {
     let native_options = eframe::NativeOptions::default();
     let _ = eframe::run_native(
         "Caliber",

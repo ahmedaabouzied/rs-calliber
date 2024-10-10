@@ -3,6 +3,7 @@ use std::f64::consts::PI;
 use std::time::Duration;
 
 /// Chirp is a linear sound wave which frequency increases linearly over time.
+#[derive(Debug, Clone)]
 pub struct Chirp {
     start_freq: f32,
     end_freq: f32,

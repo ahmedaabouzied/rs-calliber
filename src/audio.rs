@@ -5,7 +5,10 @@ use rodio::Source;
 use rodio::{OutputStream, Sink};
 
 use std::sync::mpsc::Sender;
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
 
 use super::freq;
 
@@ -48,9 +51,9 @@ fn select_output_device(device_name: String) -> cpal::Device {
 pub fn capture_input(
     input_device_name: String,
     sample_rate: f32,
-    duration: f32,
     buffer: Arc<Mutex<Vec<f32>>>,
     for_tx: Sender<f32>,
+    is_playing: Arc<AtomicBool>,
 ) {
     let input_device = select_input_device(input_device_name);
     let config_range = input_device.default_input_config().unwrap();
@@ -72,13 +75,16 @@ pub fn capture_input(
         )
         .unwrap();
     input_stream.play().unwrap();
-    std::thread::sleep(std::time::Duration::from_secs_f32(duration));
+    while is_playing.load(Ordering::SeqCst) {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    input_stream.play().unwrap();
     let locked_data = buffer.lock().unwrap();
     let ffr = freq::freq_of_resonance(locked_data.clone(), sample_rate, None);
     for_tx.send(ffr).unwrap();
 }
 
-pub fn play_output<S>(output_device_name: String, sound: S)
+pub fn play_output<S>(output_device_name: String, sound: S, stop_signal: Arc<AtomicBool>)
 where
     S: Source + Send + 'static,
     f32: FromSample<S::Item>,
@@ -88,5 +94,8 @@ where
         OutputStream::try_from_device(&select_output_device(output_device_name)).unwrap();
     let sink = Sink::try_new(&stream_handle).unwrap();
     sink.append(sound);
-    sink.sleep_until_end();
+    while stop_signal.load(Ordering::SeqCst) {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    sink.stop();
 }
