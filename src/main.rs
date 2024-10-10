@@ -20,7 +20,7 @@ use std::vec::Vec;
 const A4_FREQ: f32 = 440.0;
 const SAMPLE_RATE: f32 = 192000.0; // Standard audio sample rate
 const DOWNSAMPLE_FACTOR: f32 = 1000.0;
-const DURATION: f32 = 5.0; // 15 seconds for the A4 note
+const DURATION: f32 = 5.0;
 mod audio;
 mod chirp;
 mod freq;
@@ -32,8 +32,6 @@ struct MainUI {
     is_playing: Arc<AtomicBool>,
     started_sound: bool,
     start_time: Instant,
-    zoom_factor: f32,
-    x_offset: f32,
     points_vector: Vec<[f64; 2]>,
     for_tx: Sender<f32>,
     for_rx: Receiver<f32>,
@@ -50,8 +48,6 @@ impl MainUI {
         let start_time = Instant::now();
         let is_playing = Arc::new(AtomicBool::new(false));
         let started_sound = false;
-        let zoom_factor = 0.0;
-        let x_offset = 0.0;
         let points_vector = vec![];
         let (for_tx, for_rx): (Sender<f32>, Receiver<f32>) = mpsc::channel();
         let captured_buffer = Arc::new(Mutex::new(Vec::<f32>::new()));
@@ -62,8 +58,6 @@ impl MainUI {
             is_playing,
             started_sound,
             start_time,
-            zoom_factor,
-            x_offset,
             points_vector,
             for_tx,
             for_rx,
@@ -140,6 +134,28 @@ impl MainUI {
             ui.checkbox(&mut self.drain_graphs, "Drain graphs");
         });
     }
+    fn paint_duration_input(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.label("Duration: ");
+            if self.is_playing.load(Ordering::SeqCst) {
+                ui.disable();
+            }
+            let mut val = format!("{}", self.duration).to_string();
+            ui.add(egui::TextEdit::singleline(&mut val));
+            ui.label("Seconds");
+            if val == "" {
+                self.duration = 0.0;
+            }
+            if let Ok(parsed_val) = val.parse::<f32>() {
+                self.duration = parsed_val;
+            } else {
+                ui.colored_label(
+                    egui::Color32::RED,
+                    "Invalid input, it should be floating number in the form of 100.0",
+                );
+            }
+        });
+    }
 
     fn paint_sound_devices_dropdown(&mut self, ui: &mut egui::Ui) {
         let input_devices = audio::get_input_devices().unwrap();
@@ -173,17 +189,6 @@ impl MainUI {
         });
     }
 
-    fn paint_zoom_controls(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            if ui.button("Zoom In").clicked() {
-                self.zoom_factor *= 1.2; // Increase zoom factor
-            }
-            if ui.button("Zoom Out").clicked() {
-                self.zoom_factor /= 1.2; // Decrease zoom factor
-            }
-        });
-    }
-
     fn paint_output_wave(&self, ui: &mut egui::Ui) {
         egui::ScrollArea::horizontal().show(ui, |ui| {
             let mut points_to_plot = self.points_vector.clone();
@@ -203,25 +208,13 @@ impl MainUI {
         });
     }
 
-    fn paint_scroll_controls(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            ui.label("Scroll X:");
-            if ui.button("<< Left").clicked() {
-                self.x_offset -= 0.1; // Pan left
-            }
-            if ui.button("Right >>").clicked() {
-                self.x_offset += 0.1; // Pan right
-            }
-        });
-    }
-
     fn paint_frequency_of_resonance(&self, ui: &mut egui::Ui) {
         ui.label(format!("Frequency of resonance: {:.2} Hz", self.last_for));
     }
 
     fn update_outgoing_wave_graph(&mut self) {
         let elapsed = self.start_time.elapsed().as_secs_f32();
-        let max_time = elapsed.min(DURATION);
+        let max_time = elapsed.min(self.duration);
 
         // Plot the sine wave over time
         let samples_to_show = (max_time * SAMPLE_RATE) as usize;
@@ -247,7 +240,7 @@ impl MainUI {
             .collect();
         self.points_vector = points;
         // Stop playing after 15 seconds
-        if elapsed >= DURATION {
+        if elapsed >= self.duration {
             self.is_playing.store(false, Ordering::SeqCst);
             self.started_sound = false;
         }
@@ -259,12 +252,25 @@ impl eframe::App for MainUI {
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::scroll_area::ScrollArea::vertical().show(ui, |ui| {
                 self.paint_window_title(ui);
-                self.paint_start_and_stop_buttons(ui);
-                self.paint_sound_devices_dropdown(ui);
-                self.paint_drain_graphs_checkbox(ui);
-                self.paint_zoom_controls(ui);
+                egui::Frame::group(ui.style()).show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
+                            ui.label(egui::RichText::new("Chrip controls"));
+                            self.paint_duration_input(ui);
+                        });
+                    });
+                });
+                ui.horizontal(|ui| {
+                    egui::Frame::group(ui.style()).show(ui, |ui| {
+                        ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
+                            ui.label(egui::RichText::new("Play controls"));
+                            self.paint_sound_devices_dropdown(ui);
+                            self.paint_drain_graphs_checkbox(ui);
+                            self.paint_start_and_stop_buttons(ui);
+                        });
+                    });
+                });
                 self.paint_output_wave(ui);
-                self.paint_scroll_controls(ui);
 
                 if self.is_playing.load(Ordering::SeqCst) {
                     self.start_sound();
