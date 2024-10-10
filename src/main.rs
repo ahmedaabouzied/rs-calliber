@@ -27,6 +27,7 @@ mod freq;
 use chirp::Chirp;
 
 struct MainUI {
+    selected_tab: u8,
     current_chirp: Chirp,
     duration: f32, // Default is 5.0;
     chirp_start: f32,
@@ -62,6 +63,7 @@ impl MainUI {
         let captured_buffer = Arc::new(Mutex::new(Vec::<f32>::new()));
         let drain_graphs = true;
         Self {
+            selected_tab: 0, // Default on the calibration page.
             chirp_start,
             chirp_end,
             output_sample_rate,
@@ -358,135 +360,174 @@ impl MainUI {
             self.started_sound = false;
         }
     }
+
+    fn render_calibrate_window(
+        &mut self,
+        ui: &mut egui::Ui,
+        ctx: &egui::Context,
+        _frame: &mut eframe::Frame,
+    ) {
+        egui::Frame::group(ui.style()).show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
+                    ui.label(egui::RichText::new("Chrip controls"));
+                    self.paint_duration_input(ui);
+                    self.paint_chirp_start_input(ui);
+                    self.paint_chirp_end_input(ui);
+                    self.paint_output_sample_rate_input(ui);
+                    self.paint_captured_input_sample_rate(ui);
+                });
+            });
+        });
+        ui.add_space(20.0);
+        ui.horizontal(|ui| {
+            egui::Frame::group(ui.style()).show(ui, |ui| {
+                ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
+                    ui.label(egui::RichText::new("Play controls"));
+                    self.paint_sound_devices_dropdown(ui);
+                    self.paint_drain_graphs_checkbox(ui);
+                    self.paint_start_and_stop_buttons(ui);
+                });
+            });
+        });
+        ui.add_space(20.0);
+        egui::Frame::group(ui.style()).show(ui, |ui| {
+            ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
+                ui.label(egui::RichText::new("Results"));
+                if !self.is_playing.load(Ordering::SeqCst) {
+                    self.paint_frequency_of_resonance(ui);
+                } else {
+                    ui.label("Capturing input ...");
+                }
+            });
+        });
+        ui.add_space(20.0);
+        self.paint_output_wave(ui);
+
+        if self.is_playing.load(Ordering::SeqCst) {
+            self.start_sound();
+            self.update_outgoing_wave_graph();
+            ui.label("Calculating frequency of resonance...");
+        }
+
+        let mut buffer_to_plot = Vec::new();
+        {
+            let captured_buffer = self.captured_buffer.lock().unwrap();
+            if let Ok(freq) = self.for_rx.try_recv() {
+                self.last_for = freq;
+            }
+            buffer_to_plot = captured_buffer.clone();
+        }
+
+        let buf_len = buffer_to_plot.len();
+
+        let mut points: Vec<[f64; 2]> = buffer_to_plot
+            .into_iter()
+            .enumerate()
+            .map(|(i, x)| {
+                [
+                    (i as f32 / self.captured_input_sample_rate) as f64,
+                    x as f64,
+                ]
+            })
+            .collect();
+
+        if self.drain_graphs {
+            if buf_len > self.captured_input_sample_rate as usize * 5 {
+                points.drain(0..buf_len - self.captured_input_sample_rate as usize * 5);
+            }
+        }
+
+        ui.add_space(20.0);
+        egui::Frame::group(ui.style()).show(ui, |ui| {
+            ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
+                ui.label(egui::RichText::new("Captured Input"));
+                let line = Line::new(PlotPoints::new(points));
+                let plot = Plot::new("Received audio").height(240.0);
+                plot.show(ui, |plot_ui| {
+                    plot_ui.line(line);
+                });
+                if self.is_playing.load(Ordering::SeqCst) {
+                    ui.disable();
+                }
+                ui.horizontal(|ui| {
+                    if ui.button("Export to wav").clicked {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .set_file_name("captured.wav")
+                            .set_can_create_directories(true)
+                            .save_file()
+                        {
+                            let captured_buffer = self.captured_buffer.lock().unwrap();
+                            let sample_rate = self.captured_input_sample_rate as u32;
+                            audio::save_mono_vec_to_wav(&captured_buffer, sample_rate, &path)
+                                .unwrap();
+                        }
+                    };
+                    if ui.button("Export to CSV (Excel)").clicked {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .set_file_name("captured.csv")
+                            .set_can_create_directories(true)
+                            .save_file()
+                        {
+                            let captured_buffer = self.captured_buffer.lock().unwrap();
+                            let sample_rate = self.captured_input_sample_rate as u32;
+                            audio::save_mono_vec_with_db_to_csv(
+                                &captured_buffer,
+                                sample_rate,
+                                &path,
+                            )
+                            .unwrap();
+                        }
+                    };
+                });
+                // Request a repaint to keep the animation running
+                ctx.request_repaint();
+            });
+        });
+    }
+
+    fn render_detect_window(
+        &mut self,
+        ui: &mut egui::Ui,
+        ctx: &egui::Context,
+        _frame: &mut eframe::Frame,
+    ) {
+        egui::Frame::group(ui.style()).show(ui, |ui| {
+            ui.label("Detect");
+        });
+    }
 }
 
 impl eframe::App for MainUI {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::scroll_area::ScrollArea::vertical().show(ui, |ui| {
-                self.paint_window_title(ui);
-                ui.add_space(20.0);
-                egui::Frame::group(ui.style()).show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
-                            ui.label(egui::RichText::new("Chrip controls"));
-                            self.paint_duration_input(ui);
-                            self.paint_chirp_start_input(ui);
-                            self.paint_chirp_end_input(ui);
-                            self.paint_output_sample_rate_input(ui);
-                            self.paint_captured_input_sample_rate(ui);
-                        });
-                    });
-                });
-                ui.add_space(20.0);
                 ui.horizontal(|ui| {
-                    egui::Frame::group(ui.style()).show(ui, |ui| {
-                        ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
-                            ui.label(egui::RichText::new("Play controls"));
-                            self.paint_sound_devices_dropdown(ui);
-                            self.paint_drain_graphs_checkbox(ui);
-                            self.paint_start_and_stop_buttons(ui);
-                        });
-                    });
-                });
-                ui.add_space(20.0);
-                egui::Frame::group(ui.style()).show(ui, |ui| {
-                    ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
-                        ui.label(egui::RichText::new("Results"));
-                        if !self.is_playing.load(Ordering::SeqCst) {
-                            self.paint_frequency_of_resonance(ui);
+                    let callibrate_btn =
+                        egui::Button::new("Calibrate").fill(if self.selected_tab == 0 {
+                            egui::Color32::from_rgb(180, 180, 180)
                         } else {
-                            ui.label("Capturing input ...");
-                        }
-                    });
-                });
-                ui.add_space(20.0);
-                self.paint_output_wave(ui);
-
-                if self.is_playing.load(Ordering::SeqCst) {
-                    self.start_sound();
-                    self.update_outgoing_wave_graph();
-                    ui.label("Calculating frequency of resonance...");
-                }
-
-                let mut buffer_to_plot = Vec::new();
-                {
-                    let captured_buffer = self.captured_buffer.lock().unwrap();
-                    if let Ok(freq) = self.for_rx.try_recv() {
-                        self.last_for = freq;
-                    }
-                    buffer_to_plot = captured_buffer.clone();
-                }
-
-                let buf_len = buffer_to_plot.len();
-
-                let mut points: Vec<[f64; 2]> = buffer_to_plot
-                    .into_iter()
-                    .enumerate()
-                    .map(|(i, x)| {
-                        [
-                            (i as f32 / self.captured_input_sample_rate) as f64,
-                            x as f64,
-                        ]
-                    })
-                    .collect();
-
-                if self.drain_graphs {
-                    if buf_len > self.captured_input_sample_rate as usize * 5 {
-                        points.drain(0..buf_len - self.captured_input_sample_rate as usize * 5);
-                    }
-                }
-
-                ui.add_space(20.0);
-                egui::Frame::group(ui.style()).show(ui, |ui| {
-                    ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
-                        ui.label(egui::RichText::new("Captured Input"));
-                        let line = Line::new(PlotPoints::new(points));
-                        let plot = Plot::new("Received audio").height(240.0);
-                        plot.show(ui, |plot_ui| {
-                            plot_ui.line(line);
+                            egui::Color32::from_rgb(240, 240, 240)
                         });
-                        if self.is_playing.load(Ordering::SeqCst) {
-                            ui.disable();
-                        }
-                        ui.horizontal(|ui| {
-                            if ui.button("Export to wav").clicked {
-                                if let Some(path) = rfd::FileDialog::new()
-                                    .set_file_name("captured.wav")
-                                    .set_can_create_directories(true)
-                                    .save_file()
-                                {
-                                    let captured_buffer = self.captured_buffer.lock().unwrap();
-                                    let sample_rate = self.captured_input_sample_rate as u32;
-                                    audio::save_mono_vec_to_wav(
-                                        &captured_buffer,
-                                        sample_rate,
-                                        &path,
-                                    )
-                                    .unwrap();
-                                }
-                            };
-                            if ui.button("Export to CSV (Excel)").clicked {
-                                if let Some(path) = rfd::FileDialog::new()
-                                    .set_file_name("captured.csv")
-                                    .set_can_create_directories(true)
-                                    .save_file()
-                                {
-                                    let captured_buffer = self.captured_buffer.lock().unwrap();
-                                    let sample_rate = self.captured_input_sample_rate as u32;
-                                    audio::save_mono_vec_with_db_to_csv(
-                                        &captured_buffer,
-                                        sample_rate,
-                                        &path,
-                                    )
-                                    .unwrap();
-                                }
-                            };
-                        });
-                        // Request a repaint to keep the animation running
-                        ctx.request_repaint();
+                    let detect_btn = egui::Button::new("Detect").fill(if self.selected_tab == 1 {
+                        egui::Color32::from_rgb(180, 180, 180)
+                    } else {
+                        egui::Color32::from_rgb(240, 240, 240)
                     });
+
+                    if ui.add(callibrate_btn).clicked() {
+                        self.selected_tab = 0;
+                    }
+                    if ui.add(detect_btn).clicked() {
+                        self.selected_tab = 1;
+                    }
                 });
+                ui.separator();
+                match self.selected_tab {
+                    0 => self.render_calibrate_window(ui, ctx, _frame),
+                    1 => self.render_detect_window(ui, ctx, _frame),
+                    _ => {}
+                }
             });
         });
     }
