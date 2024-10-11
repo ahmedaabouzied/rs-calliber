@@ -1,6 +1,8 @@
 use crate::audio;
 use cpal::traits::DeviceTrait;
 use egui_plot::{Line, Plot, PlotPoints};
+use std::sync::mpsc;
+use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex,
@@ -12,11 +14,15 @@ use std::time::Instant;
 pub struct DetectTab {
     sine_wave_freq: f32,
     output_sample_rate: f32,
+    captured_sample_rate: f32,
     duration: f32,
     sine_wave: crate::wave::Wave,
+    captured_buffer: Arc<Mutex<Vec<f32>>>,
     points_vector: Vec<[f64; 2]>,
     down_sample_factor: f32,
     start_time: Instant,
+    for_tx: Sender<f32>,
+    for_rx: Receiver<f32>,
 
     input_device_name: String,
     output_device_name: String,
@@ -29,11 +35,13 @@ pub struct DetectTab {
 impl DetectTab {
     pub fn new() -> Self {
         let sine_wave_freq: f32 = 441.0; // Default to A4 note.
+        let (for_tx, for_rx): (Sender<f32>, Receiver<f32>) = mpsc::channel();
 
         Self {
             sine_wave_freq,
             points_vector: Vec::new(),
             output_sample_rate: 192000.0,
+            captured_sample_rate: 192000.0,
             down_sample_factor: 100.0,
             duration: 5.0,
             input_device_name: "Default".to_string(),
@@ -43,6 +51,9 @@ impl DetectTab {
             is_playing: Arc::new(AtomicBool::new(false)),
             started_playing: false,
             sine_wave: crate::wave::Wave::new(192000.0, sine_wave_freq, 5.0),
+            captured_buffer: Arc::new(Mutex::new(Vec::<f32>::new())),
+            for_tx,
+            for_rx,
         }
     }
 
@@ -98,8 +109,13 @@ impl DetectTab {
         }
         self.started_playing = true;
         self.start_time = Instant::now();
+
+        let for_tx = self.for_tx.clone();
+        let captured_buffer = self.captured_buffer.clone();
+
         // Play the sound in a separate thread
         let output_device_name = self.output_device_name.clone();
+        let input_device_name = self.input_device_name.clone();
 
         // Start the wave playing thread.
         let is_playing = self.is_playing.clone();
@@ -108,6 +124,20 @@ impl DetectTab {
         self.sine_wave = wave.clone();
         spawn(move || {
             audio::play_output(output_device_name, wave, is_playing);
+        });
+
+        // Start the wave capturing thread.
+        let is_playing = self.is_playing.clone();
+        let sample_rate = self.captured_sample_rate.clone();
+
+        spawn(move || {
+            audio::capture_input(
+                input_device_name,
+                sample_rate,
+                captured_buffer,
+                for_tx,
+                is_playing,
+            )
         });
     }
 
@@ -200,6 +230,29 @@ impl DetectTab {
         }
     }
 
+    fn paint_captured_input_sample_rate(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.label("Captured input sample rate: ");
+            if self.is_playing.load(Ordering::SeqCst) {
+                ui.disable();
+            }
+            let mut val = format!("{}", self.captured_sample_rate).to_string();
+            ui.add(egui::TextEdit::singleline(&mut val));
+            ui.label("Hz");
+            if val == "" {
+                self.captured_sample_rate = 0.0;
+            }
+            if let Ok(parsed_val) = val.parse::<f32>() {
+                self.captured_sample_rate = parsed_val;
+            } else {
+                ui.colored_label(
+                    egui::Color32::RED,
+                    "Invalid input, it should be floating number in the form of 100.0",
+                );
+            }
+        });
+    }
+
     fn paint_output_wave(&self, ui: &mut egui::Ui) {
         egui::ScrollArea::horizontal().show(ui, |ui| {
             let mut points_to_plot = self.points_vector.clone();
@@ -253,6 +306,7 @@ impl DetectTab {
                     self.paint_output_sample_rate_input(ui);
                     self.paint_output_freq_input(ui);
                     self.paint_duration_input(ui);
+                    self.paint_captured_input_sample_rate(ui);
                 },
             );
         });
@@ -277,6 +331,70 @@ impl DetectTab {
             self.update_outgoing_wave_graph();
         }
 
-        ctx.request_repaint();
+        let mut buffer_to_plot = Vec::new();
+        {
+            let captured_buffer = self.captured_buffer.lock().unwrap();
+            buffer_to_plot = captured_buffer.clone();
+        }
+
+        let buf_len = buffer_to_plot.len();
+
+        let mut points: Vec<[f64; 2]> = buffer_to_plot
+            .into_iter()
+            .enumerate()
+            .map(|(i, x)| [(i as f32 / self.captured_sample_rate) as f64, x as f64])
+            .collect();
+
+        if self.drain_graphs {
+            if buf_len > self.captured_sample_rate as usize * 5 {
+                points.drain(0..buf_len - self.captured_sample_rate as usize * 5);
+            }
+        }
+        ui.add_space(20.0);
+        egui::Frame::group(ui.style()).show(ui, |ui| {
+            ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
+                ui.label(egui::RichText::new("Captured Input"));
+                let line = Line::new(PlotPoints::new(points));
+                let plot = Plot::new("Received audio").height(240.0);
+                plot.show(ui, |plot_ui| {
+                    plot_ui.line(line);
+                });
+                if self.is_playing.load(Ordering::SeqCst) {
+                    ui.disable();
+                }
+                ui.horizontal(|ui| {
+                    if ui.button("Export to wav").clicked {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .set_file_name("captured.wav")
+                            .set_can_create_directories(true)
+                            .save_file()
+                        {
+                            let captured_buffer = self.captured_buffer.lock().unwrap();
+                            let sample_rate = self.captured_sample_rate as u32;
+                            audio::save_mono_vec_to_wav(&captured_buffer, sample_rate, &path)
+                                .unwrap();
+                        }
+                    };
+                    if ui.button("Export to CSV (Excel)").clicked {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .set_file_name("captured.csv")
+                            .set_can_create_directories(true)
+                            .save_file()
+                        {
+                            let captured_buffer = self.captured_buffer.lock().unwrap();
+                            let sample_rate = self.captured_sample_rate as u32;
+                            audio::save_mono_vec_with_db_to_csv(
+                                &captured_buffer,
+                                sample_rate,
+                                &path,
+                            )
+                            .unwrap();
+                        }
+                    };
+                });
+                // Request a repaint to keep the animation running
+                ctx.request_repaint();
+            });
+        });
     }
 }
