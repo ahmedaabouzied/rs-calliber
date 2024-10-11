@@ -1,38 +1,13 @@
-use rustfft::{
-    num_complex::Complex, FftPlanner, FftPlannerAvx, FftPlannerNeon, FftPlannerScalar,
-    FftPlannerSse,
-};
+use rustfft::{num_complex::Complex, FftPlanner};
 
-#[derive(Clone, Debug)]
-pub enum Planner {
-    FftPlanner,
-    // FftPlannerAvx,
-    FftPlannerNeon,
-    FftPlannerScalar,
-    // FftPlannerSse,
-}
-
-pub fn freq_of_resonance(samples: Vec<f32>, sample_rate: f32, planner: Option<Planner>) -> f32 {
+pub fn freq_of_resonance(samples: Vec<f32>, sample_rate: f32) -> f32 {
     let num_samples = samples.len();
 
     let mut fft_input: Vec<Complex<f32>> = samples.iter().map(|&x| Complex::new(x, 0.0)).collect();
 
     let mut generic_planner = FftPlanner::new();
-    // let mut avx_planner = FftPlannerAvx::new().unwrap();
-    let mut neon_planner = FftPlannerNeon::new().unwrap();
-    let mut scalar_planner = FftPlannerScalar::new();
-    // let mut sse_planner = FftPlannerSse::new().unwrap();
 
-    let fft = match planner {
-        Some(p) => match p {
-            // Planner::FftPlannerAvx => avx_planner.plan_fft_forward(num_samples),
-            Planner::FftPlannerNeon => neon_planner.plan_fft_forward(num_samples),
-            Planner::FftPlannerScalar => scalar_planner.plan_fft_forward(num_samples),
-            // Planner::FftPlannerSse => sse_planner.plan_fft_forward(num_samples),
-            Planner::FftPlanner => generic_planner.plan_fft_forward(num_samples),
-        },
-        None => generic_planner.plan_fft_forward(num_samples),
-    };
+    let fft = generic_planner.plan_fft_forward(num_samples);
 
     fft.process(&mut fft_input);
 
@@ -108,24 +83,12 @@ mod tests {
             .samples::<f32>() // Assume the WAV file has 16-bit samples
             .map(|s| s.unwrap() as f32 / f32::MAX as f32) // Convert samples to f32 in range -1.0 to 1.0
             .collect();
-        for alg in vec![
-            Planner::FftPlanner,
-            Planner::FftPlannerNeon,
-            // Planner::FftPlannerAvx,
-            Planner::FftPlannerScalar,
-            // Planner::FftPlannerSse,
-        ]
-        .into_iter()
-        {
-            let res = freq_of_resonance(samples.clone(), 192000.00, Some(alg.clone()));
-            if (res - 1348.00).abs() > 1.0 {
-                println!(
-                    "{:?}: Expected freq of resonance = 1348, but got {}",
-                    alg, res
-                );
-            }
-            println!("{:?}: Result freq of resonance = {}", alg, res);
+
+        let res = freq_of_resonance(samples.clone(), 192000.00);
+        if (res - 1348.00).abs() > 1.0 {
+            println!("Expected freq of resonance = 1348, but got {}", res);
         }
+        println!("Result freq of resonance = {}", res);
     }
 
     #[test]
@@ -135,7 +98,7 @@ mod tests {
         let duration = 1.0; // 1 second
 
         let samples = generate_sine_wave(frequency, sample_rate, duration);
-        let calculated_frequency = freq_of_resonance(samples, sample_rate, None);
+        let calculated_frequency = freq_of_resonance(samples, sample_rate);
         // Assert that the calculated frequency is close to 440 Hz
         assert!(
             (calculated_frequency - frequency).abs() < 1.0,
