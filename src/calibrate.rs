@@ -131,6 +131,13 @@ impl CalibrateTab {
             if ui.button("Stop").clicked() {
                 self.stop();
             };
+            if self.is_playing.load(Ordering::SeqCst) {
+                ui.disable();
+            }
+            if ui.button("Clear").clicked() {
+                self.points_vector.clear();
+                self.captured_buffer.lock().unwrap().clear();
+            }
         });
     }
 

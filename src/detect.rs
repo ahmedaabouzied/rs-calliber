@@ -294,6 +294,13 @@ impl DetectTab {
                 self.is_playing.store(false, Ordering::SeqCst);
                 self.started_playing = false;
             };
+            if self.is_playing.load(Ordering::SeqCst) {
+                ui.disable();
+            }
+            if ui.button("Clear").clicked() {
+                self.points_vector.clear();
+                self.captured_buffer.lock().unwrap().clear();
+            }
         });
     }
 
