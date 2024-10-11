@@ -9,6 +9,7 @@ use std::sync::{
 };
 use std::thread::spawn;
 use std::time::Instant;
+use tokio::sync::mpsc::{Receiver as TReceiver, Sender as TSender};
 
 #[derive(Debug)]
 pub struct DetectTab {
@@ -24,18 +25,26 @@ pub struct DetectTab {
     for_tx: Sender<f32>,
     for_rx: Receiver<f32>,
 
+    async_stat_tx: TSender<String>,
+    async_stat_rx: TReceiver<String>,
+
     input_device_name: String,
     output_device_name: String,
 
     drain_graphs: bool,
     is_playing: Arc<AtomicBool>,
     started_playing: bool,
+
+    tasker: crate::task::Tasker,
+    status: String,
 }
 
 impl DetectTab {
     pub fn new() -> Self {
         let sine_wave_freq: f32 = 441.0; // Default to A4 note.
         let (for_tx, for_rx): (Sender<f32>, Receiver<f32>) = mpsc::channel();
+        let (async_stat_tx, async_stat_rx): (TSender<String>, TReceiver<String>) =
+            tokio::sync::mpsc::channel(1);
 
         Self {
             sine_wave_freq,
@@ -54,6 +63,10 @@ impl DetectTab {
             captured_buffer: Arc::new(Mutex::new(Vec::<f32>::new())),
             for_tx,
             for_rx,
+            tasker: crate::task::Tasker::new(),
+            async_stat_tx,
+            async_stat_rx,
+            status: String::new(),
         }
     }
 
@@ -376,10 +389,12 @@ impl DetectTab {
                             .set_can_create_directories(true)
                             .save_file()
                         {
-                            let captured_buffer = self.captured_buffer.lock().unwrap();
+                            let captured_buffer = self.captured_buffer.lock().unwrap().clone();
                             let sample_rate = self.captured_sample_rate as u32;
-                            audio::save_mono_vec_to_wav(&captured_buffer, sample_rate, &path)
-                                .unwrap();
+                            self.tasker.spawn(async move {
+                                audio::save_mono_vec_to_wav(&captured_buffer, sample_rate, &path)
+                                    .unwrap();
+                            });
                         }
                     };
                     if ui.button("Export to CSV (Excel)").clicked {
@@ -388,17 +403,29 @@ impl DetectTab {
                             .set_can_create_directories(true)
                             .save_file()
                         {
-                            let captured_buffer = self.captured_buffer.lock().unwrap();
+                            let captured_buffer = self.captured_buffer.lock().unwrap().clone();
                             let sample_rate = self.captured_sample_rate as u32;
-                            audio::save_mono_vec_with_db_to_csv(
-                                &captured_buffer,
-                                sample_rate,
-                                &path,
-                            )
-                            .unwrap();
+                            let tx = self.async_stat_tx.clone();
+                            self.tasker.spawn(async move {
+                                tx.send("Saving file".to_string()).await.unwrap();
+                                audio::save_mono_vec_with_db_to_csv(
+                                    &captured_buffer,
+                                    sample_rate,
+                                    &path,
+                                )
+                                .await
+                                .unwrap();
+                                tx.send("Done saving file".to_string()).await.unwrap();
+                            });
                         }
                     };
+                    match self.async_stat_rx.try_recv() {
+                        Ok(v) => self.status = v,
+                        Err(tokio::sync::mpsc::error::TryRecvError::Empty) => {}
+                        Err(e) => self.status = e.to_string(),
+                    }
                 });
+                ui.label(self.status.clone());
                 // Request a repaint to keep the animation running
                 ctx.request_repaint();
             });

@@ -41,6 +41,7 @@ pub struct CalibrateTab {
     input_device_name: String,
     output_device_name: String,
     drain_graphs: bool,
+    tasker: crate::task::Tasker,
 }
 
 impl CalibrateTab {
@@ -76,6 +77,7 @@ impl CalibrateTab {
             input_device_name: "Default".to_string(),
             output_device_name: "Default".to_string(),
             drain_graphs,
+            tasker: crate::task::Tasker::new(),
         }
     }
 
@@ -460,14 +462,17 @@ impl CalibrateTab {
                             .set_can_create_directories(true)
                             .save_file()
                         {
-                            let captured_buffer = self.captured_buffer.lock().unwrap();
+                            let captured_buffer = self.captured_buffer.lock().unwrap().clone();
                             let sample_rate = self.captured_input_sample_rate as u32;
-                            audio::save_mono_vec_with_db_to_csv(
-                                &captured_buffer,
-                                sample_rate,
-                                &path,
-                            )
-                            .unwrap();
+                            self.tasker.spawn(async move {
+                                audio::save_mono_vec_with_db_to_csv(
+                                    &captured_buffer,
+                                    sample_rate,
+                                    &path,
+                                )
+                                .await
+                                .unwrap();
+                            });
                         }
                     };
                 });

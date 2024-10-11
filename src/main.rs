@@ -6,6 +6,7 @@ mod calibrate;
 mod chirp;
 mod detect;
 mod freq;
+mod task;
 mod wave;
 
 struct MainUI {
