@@ -14,7 +14,6 @@ pub enum Planner {
 
 pub fn freq_of_resonance(samples: Vec<f32>, sample_rate: f32, planner: Option<Planner>) -> f32 {
     let num_samples = samples.len();
-    println!("Num samples = {}", num_samples);
 
     let mut fft_input: Vec<Complex<f32>> = samples.iter().map(|&x| Complex::new(x, 0.0)).collect();
 
@@ -36,15 +35,11 @@ pub fn freq_of_resonance(samples: Vec<f32>, sample_rate: f32, planner: Option<Pl
     };
 
     fft.process(&mut fft_input);
-    println!("FFT processed {}", fft_input.len());
 
     let magnitudes: Vec<f32> = fft_input[0..num_samples / 2]
         .iter()
         .map(|c| c.norm())
         .collect();
-    if magnitudes.len() > 10 {
-        println!("Magnitudes = {:?}", &magnitudes[0..10]);
-    }
 
     let (max_index, _) = magnitudes
         .iter()
