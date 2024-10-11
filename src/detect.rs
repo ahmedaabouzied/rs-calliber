@@ -42,7 +42,7 @@ impl DetectTab {
             points_vector: Vec::new(),
             output_sample_rate: 192000.0,
             captured_sample_rate: 192000.0,
-            down_sample_factor: 100.0,
+            down_sample_factor: 1000.0,
             duration: 5.0,
             input_device_name: "Default".to_string(),
             output_device_name: "Default".to_string(),
