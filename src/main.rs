@@ -13,14 +13,43 @@ struct MainUI {
     selected_tab: u8,
     detect_tab: detect::DetectTab,
     calibrate_tab: calibrate::CalibrateTab,
+    status: String,
+    status_timeout: std::time::Duration,
+    status_updated_at: std::time::Instant,
+    status_rx: tokio::sync::mpsc::Receiver<String>,
+    status_tx: tokio::sync::mpsc::Sender<String>,
 }
 
 impl MainUI {
     fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+        let (status_tx, status_rx) = tokio::sync::mpsc::channel::<String>(1);
         Self {
             selected_tab: 0, // Default on the calibration page.
-            detect_tab: detect::DetectTab::new(),
-            calibrate_tab: calibrate::CalibrateTab::new(_cc),
+            detect_tab: detect::DetectTab::new(status_tx.clone()),
+            calibrate_tab: calibrate::CalibrateTab::new(_cc, status_tx.clone()),
+            status: "Running".to_string(),
+            status_timeout: std::time::Duration::from_secs(3),
+            status_updated_at: std::time::Instant::now(),
+            status_rx,
+            status_tx,
+        }
+    }
+
+    fn update_status(&mut self) {
+        match self.status_rx.try_recv() {
+            Ok(v) => {
+                self.status = v;
+                self.status_updated_at = std::time::Instant::now();
+            }
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty) => {}
+            Err(e) => {
+                self.status = e.to_string();
+                self.status_updated_at = std::time::Instant::now();
+            }
+        }
+        if self.status_updated_at.elapsed() > self.status_timeout && self.status.contains("Done") {
+            self.status_updated_at = std::time::Instant::now();
+            self.status = "Running".to_string();
         }
     }
 }
@@ -28,34 +57,36 @@ impl MainUI {
 impl eframe::App for MainUI {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
-            egui::scroll_area::ScrollArea::vertical().show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    let callibrate_btn =
-                        egui::Button::new("Calibrate").fill(if self.selected_tab == 0 {
-                            egui::Color32::from_rgb(180, 180, 180)
-                        } else {
-                            egui::Color32::from_rgb(240, 240, 240)
-                        });
-                    let detect_btn = egui::Button::new("Detect").fill(if self.selected_tab == 1 {
+            ui.horizontal(|ui| {
+                let callibrate_btn =
+                    egui::Button::new("Calibrate").fill(if self.selected_tab == 0 {
                         egui::Color32::from_rgb(180, 180, 180)
                     } else {
                         egui::Color32::from_rgb(240, 240, 240)
                     });
-
-                    if ui.add(callibrate_btn).clicked() {
-                        self.selected_tab = 0;
-                    }
-                    if ui.add(detect_btn).clicked() {
-                        self.selected_tab = 1;
-                    }
+                let detect_btn = egui::Button::new("Detect").fill(if self.selected_tab == 1 {
+                    egui::Color32::from_rgb(180, 180, 180)
+                } else {
+                    egui::Color32::from_rgb(240, 240, 240)
                 });
-                ui.separator();
-                match self.selected_tab {
-                    0 => self.calibrate_tab.render(ui, ctx, _frame),
-                    1 => self.detect_tab.render(ui, ctx, _frame),
-                    _ => {}
+
+                if ui.add(callibrate_btn).clicked() {
+                    self.selected_tab = 0;
                 }
+                if ui.add(detect_btn).clicked() {
+                    self.selected_tab = 1;
+                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.add(egui::Label::new(self.status.clone()));
+                });
             });
+            ui.separator();
+            egui::scroll_area::ScrollArea::vertical().show(ui, |ui| match self.selected_tab {
+                0 => self.calibrate_tab.render(ui, ctx, _frame),
+                1 => self.detect_tab.render(ui, ctx, _frame),
+                _ => {}
+            });
+            self.update_status();
         });
     }
 }

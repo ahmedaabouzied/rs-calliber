@@ -42,10 +42,14 @@ pub struct CalibrateTab {
     output_device_name: String,
     drain_graphs: bool,
     tasker: crate::task::Tasker,
+    status_tx: tokio::sync::mpsc::Sender<String>,
 }
 
 impl CalibrateTab {
-    pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(
+        _cc: &eframe::CreationContext<'_>,
+        status_tx: tokio::sync::mpsc::Sender<String>,
+    ) -> Self {
         let chirp_start = 500.0;
         let chirp_end = 20_000.0;
         let output_sample_rate = DEFAULT_SAMPLE_RATE;
@@ -78,6 +82,7 @@ impl CalibrateTab {
             output_device_name: "Default".to_string(),
             drain_graphs,
             tasker: crate::task::Tasker::new(),
+            status_tx,
         }
     }
 
@@ -450,10 +455,15 @@ impl CalibrateTab {
                             .set_can_create_directories(true)
                             .save_file()
                         {
-                            let captured_buffer = self.captured_buffer.lock().unwrap();
+                            let tx = self.status_tx.clone();
+                            let captured_buffer = self.captured_buffer.lock().unwrap().clone();
                             let sample_rate = self.captured_input_sample_rate as u32;
-                            audio::save_mono_vec_to_wav(&captured_buffer, sample_rate, &path)
-                                .unwrap();
+                            self.tasker.spawn(async move {
+                                tx.send("Saving wav file".to_string()).await.unwrap();
+                                audio::save_mono_vec_to_wav(&captured_buffer, sample_rate, &path)
+                                    .unwrap();
+                                tx.send("Done saving wav file".to_string()).await.unwrap();
+                            });
                         }
                     };
                     if ui.button("Export to CSV (Excel)").clicked {
@@ -462,9 +472,11 @@ impl CalibrateTab {
                             .set_can_create_directories(true)
                             .save_file()
                         {
+                            let tx = self.status_tx.clone();
                             let captured_buffer = self.captured_buffer.lock().unwrap().clone();
                             let sample_rate = self.captured_input_sample_rate as u32;
                             self.tasker.spawn(async move {
+                                tx.send("Saving csv file".to_string()).await.unwrap();
                                 audio::save_mono_vec_with_db_to_csv(
                                     &captured_buffer,
                                     sample_rate,
@@ -472,6 +484,7 @@ impl CalibrateTab {
                                 )
                                 .await
                                 .unwrap();
+                                tx.send("Done saving csv file".to_string()).await.unwrap();
                             });
                         }
                     };
