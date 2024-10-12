@@ -56,6 +56,9 @@ impl MainUI {
 
 impl eframe::App for MainUI {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        let visuals = egui::Visuals::light();
+        ctx.set_visuals(visuals);
+
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.horizontal(|ui| {
                 let callibrate_btn =
