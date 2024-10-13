@@ -1,28 +1,32 @@
 use rodio::source::Source;
-use std::f64::consts::PI;
 use std::time::Duration;
 
 /// Chirp is a linear sound wave which frequency increases linearly over time.
 #[derive(Debug, Clone)]
 pub struct Chirp {
-    start_freq: f32,
-    end_freq: f32,
-    duration: f32,
-    sample_rate: f32,
+    pub start_freq: f32,
+    pub end_freq: f32,
+    pub duration: f32,
+    pub sample_rate: f32,
     index: usize,
-    samples: Vec<f32>,
+    pub samples: Vec<f32>,
 }
 
-impl Chirp {
-    pub fn new(sample_rate: f32, start_freq: f32, end_freq: f32, duration: f32) -> Self {
-        let samples = generate_chirp_wave(sample_rate, duration, start_freq, end_freq);
+impl From<hound::WavReader<std::io::BufReader<std::fs::File>>> for Chirp {
+    fn from(mut r: hound::WavReader<std::io::BufReader<std::fs::File>>) -> Self {
+        let spec = r.spec();
+        let samples: Vec<f32> = r.samples::<i32>().map(|s| s.unwrap() as f32).collect();
+        let duration = r.duration() / spec.sample_rate;
+        let sample_rate = spec.sample_rate;
+        let start_freq = samples[0];
+        let end_freq = samples.last().unwrap().clone();
         Self {
-            start_freq,
-            end_freq,
-            duration,
-            sample_rate,
-            index: 0,
             samples,
+            sample_rate: sample_rate as f32,
+            duration: duration as f32,
+            start_freq: start_freq,
+            end_freq: end_freq.to_owned(),
+            index: 0,
         }
     }
 }
@@ -63,25 +67,4 @@ impl Source for Chirp {
             self.samples.len() as f64 / self.sample_rate as f64,
         ))
     }
-}
-
-/// generate_chirp_wave generates a linear chirp wave.
-fn generate_chirp_wave(
-    sample_rate: f32,
-    duration: f32,
-    start_freq: f32,
-    end_freq: f32,
-) -> Vec<f32> {
-    let num_samples = (duration * sample_rate as f32) as usize;
-    let mut waveform = Vec::with_capacity(num_samples);
-
-    for i in 0..num_samples {
-        let t = i as f64 / sample_rate as f64; // current time
-        let freq =
-            start_freq as f64 + (end_freq as f64 - start_freq as f64) * (t / duration as f64);
-        let sample = (2.0 * PI * freq * t).sin(); // sine wave sample
-        waveform.push(sample as f32);
-    }
-
-    waveform
 }

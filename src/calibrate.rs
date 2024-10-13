@@ -20,15 +20,14 @@ use std::vec::Vec;
 // Constants
 const DEFAULT_SAMPLE_RATE: f32 = 192000.0;
 const DEFAULT_CAPTURED_INPUT_SAMPLE_RATE: f32 = 44100.0;
-const DEFAULT_DOWNSAMPLE_FACTOR: f32 = 1000.0;
-const DEFAULT_DURATION: f32 = 5.0;
+const DEFAULT_DOWNSAMPLE_FACTOR: f32 = 5.0;
 
 pub struct CalibrateTab {
-    current_chirp: Chirp,
-    duration: f32, // Default is 5.0;
-    chirp_start: f32,
-    chirp_end: f32,
-    output_sample_rate: f32,
+    current_chirp: Option<Chirp>,
+    duration: Option<f32>,
+    chirp_start: Option<f32>,
+    chirp_end: Option<f32>,
+    output_sample_rate: Option<f32>,
     captured_input_sample_rate: f32,
     is_playing: Arc<AtomicBool>,
     started_sound: bool,
@@ -50,12 +49,7 @@ impl CalibrateTab {
         _cc: &eframe::CreationContext<'_>,
         status_tx: tokio::sync::mpsc::Sender<String>,
     ) -> Self {
-        let chirp_start = 500.0;
-        let chirp_end = 20_000.0;
-        let output_sample_rate = DEFAULT_SAMPLE_RATE;
         let captured_input_sample_rate = DEFAULT_CAPTURED_INPUT_SAMPLE_RATE;
-        let duration = DEFAULT_DURATION;
-        let current_chirp = Chirp::new(output_sample_rate, chirp_start, chirp_end, duration);
         let start_time = Instant::now();
         let is_playing = Arc::new(AtomicBool::new(false));
         let started_sound = false;
@@ -64,12 +58,12 @@ impl CalibrateTab {
         let captured_buffer = Arc::new(Mutex::new(Vec::<f32>::new()));
         let drain_graphs = true;
         Self {
-            chirp_start,
-            chirp_end,
-            output_sample_rate,
+            chirp_start: None,
+            chirp_end: None,
+            output_sample_rate: None,
+            current_chirp: None,
+            duration: None,
             captured_input_sample_rate,
-            current_chirp,
-            duration,
             is_playing,
             started_sound,
             start_time,
@@ -101,18 +95,24 @@ impl CalibrateTab {
             return;
         }
         self.started_sound = true;
+        if self.current_chirp.is_none() {
+            let tx = self.status_tx.clone();
+            self.tasker.spawn(async move {
+                tx.send("Please choose a chirp input file".to_string())
+                    .await
+                    .unwrap();
+            });
+            return;
+        }
         // Play the sound in a separate thread
-        let duration = self.duration;
         let for_tx = self.for_tx.clone();
         let captured_buffer = self.captured_buffer.clone();
         let input_device_name = self.input_device_name.clone();
         let output_device_name = self.output_device_name.clone();
 
         // Start the wave playing thread.
-        let duration_clone = duration.clone();
         let is_playing = self.is_playing.clone();
-        let sound = Chirp::new(DEFAULT_SAMPLE_RATE, 500.0, 20000.0, duration_clone);
-        self.current_chirp = sound.clone();
+        let sound = self.current_chirp.clone().unwrap();
         spawn(move || {
             audio::play_output(output_device_name, sound, is_playing);
         });
@@ -156,22 +156,8 @@ impl CalibrateTab {
     fn paint_duration_input(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             ui.label("Duration: ");
-            if self.is_playing.load(Ordering::SeqCst) {
-                ui.disable();
-            }
-            let mut val = format!("{}", self.duration).to_string();
-            ui.add(egui::TextEdit::singleline(&mut val));
-            ui.label("Seconds");
-            if val == "" {
-                self.duration = 0.0;
-            }
-            if let Ok(parsed_val) = val.parse::<f32>() {
-                self.duration = parsed_val;
-            } else {
-                ui.colored_label(
-                    egui::Color32::RED,
-                    "Invalid input, it should be floating number in the form of 100.0",
-                );
+            if self.current_chirp.is_some() {
+                ui.label(format!("{} s", self.duration.unwrap()));
             }
         });
     }
@@ -179,22 +165,8 @@ impl CalibrateTab {
     fn paint_chirp_start_input(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             ui.label("Chrip start frequency: ");
-            if self.is_playing.load(Ordering::SeqCst) {
-                ui.disable();
-            }
-            let mut val = format!("{}", self.chirp_start).to_string();
-            ui.add(egui::TextEdit::singleline(&mut val));
-            ui.label("Hz");
-            if val == "" {
-                self.chirp_start = 0.0;
-            }
-            if let Ok(parsed_val) = val.parse::<f32>() {
-                self.chirp_start = parsed_val;
-            } else {
-                ui.colored_label(
-                    egui::Color32::RED,
-                    "Invalid input, it should be floating number in the form of 100.0",
-                );
+            if self.current_chirp.is_some() {
+                ui.label(format!("{} Hz", self.chirp_start.unwrap()));
             }
         });
     }
@@ -202,45 +174,48 @@ impl CalibrateTab {
     fn paint_chirp_end_input(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             ui.label("Chrip end frequency: ");
-            if self.is_playing.load(Ordering::SeqCst) {
-                ui.disable();
+            if self.current_chirp.is_some() {
+                ui.label(format!("{} Hz", self.chirp_end.unwrap()));
             }
-            let mut val = format!("{}", self.chirp_end).to_string();
-            ui.add(egui::TextEdit::singleline(&mut val));
-            ui.label("Hz");
-            if val == "" {
-                self.chirp_end = 0.0;
-            }
-            if let Ok(parsed_val) = val.parse::<f32>() {
-                self.chirp_end = parsed_val;
-            } else {
-                ui.colored_label(
-                    egui::Color32::RED,
-                    "Invalid input, it should be floating number in the form of 100.0",
-                );
-            }
+        });
+    }
+
+    fn paint_input_file_input(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.label("File input: ");
+            if ui.button("Select input file").clicked {
+                let file = rfd::FileDialog::new()
+                    .add_filter("wav", &["wav"])
+                    .set_directory("/")
+                    .pick_file();
+                if file.is_none() {
+                    let tx = self.status_tx.clone();
+                    self.tasker.spawn(async move {
+                        tx.send("No file selected".to_string()).await.unwrap();
+                    });
+                }
+                let file = file.unwrap();
+                let path = file.to_path_buf();
+                ui.label(format!("{}", path.to_str().unwrap()));
+                let wav_data = hound::WavReader::open(path).unwrap();
+                let chirp = crate::chirp::Chirp::from(wav_data);
+                self.duration = Some(chirp.duration.clone());
+                self.output_sample_rate = Some(chirp.sample_rate.clone());
+                self.chirp_start = Some(chirp.start_freq.clone());
+                self.chirp_end = Some(chirp.end_freq.clone());
+                self.current_chirp = Some(chirp);
+            };
         });
     }
 
     fn paint_output_sample_rate_input(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             ui.label("Chrip sample rate: ");
-            if self.is_playing.load(Ordering::SeqCst) {
-                ui.disable();
-            }
-            let mut val = format!("{}", self.output_sample_rate).to_string();
-            ui.add(egui::TextEdit::singleline(&mut val));
-            ui.label("Hz");
-            if val == "" {
-                self.output_sample_rate = 0.0;
-            }
-            if let Ok(parsed_val) = val.parse::<f32>() {
-                self.output_sample_rate = parsed_val;
-            } else {
-                ui.colored_label(
-                    egui::Color32::RED,
-                    "Invalid input, it should be floating number in the form of 100.0",
-                );
+            if self.current_chirp.is_some() {
+                ui.label(format!(
+                    "{} sample/second",
+                    self.output_sample_rate.unwrap()
+                ));
             }
         });
     }
@@ -300,13 +275,14 @@ impl CalibrateTab {
         });
     }
 
-    fn paint_output_wave(&self, ui: &mut egui::Ui) {
+    fn paint_output_wave(&mut self, ui: &mut egui::Ui) {
         egui::ScrollArea::horizontal().show(ui, |ui| {
             let mut points_to_plot = self.points_vector.clone();
             let points_to_plot_len = points_to_plot.len();
             if self.drain_graphs {
                 let downsampled_sample_rate =
-                    (DEFAULT_SAMPLE_RATE / DEFAULT_DOWNSAMPLE_FACTOR) as usize;
+                    (self.output_sample_rate.unwrap_or(DEFAULT_SAMPLE_RATE)
+                        / DEFAULT_DOWNSAMPLE_FACTOR) as usize;
                 if points_to_plot.len() > downsampled_sample_rate * 5 {
                     points_to_plot.drain(0..points_to_plot_len - downsampled_sample_rate * 5);
                 }
@@ -322,6 +298,47 @@ impl CalibrateTab {
                             plot_ui.line(Line::new(PlotPoints::new(points_to_plot)));
                         });
                 });
+                ui.horizontal(|ui| {
+                    if ui.button("Export to wav").clicked {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .set_file_name("captured.wav")
+                            .set_can_create_directories(true)
+                            .save_file()
+                        {
+                            let tx = self.status_tx.clone();
+                            let captured_buffer = self.current_chirp.clone().unwrap().samples;
+                            let sample_rate = self.captured_input_sample_rate as u32;
+                            self.tasker.spawn(async move {
+                                tx.send("Saving wav file".to_string()).await.unwrap();
+                                audio::save_mono_vec_to_wav(&captured_buffer, sample_rate, &path)
+                                    .unwrap();
+                                tx.send("Done saving wav file".to_string()).await.unwrap();
+                            });
+                        }
+                    };
+                    if ui.button("Export to CSV (Excel)").clicked {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .set_file_name("captured.csv")
+                            .set_can_create_directories(true)
+                            .save_file()
+                        {
+                            let tx = self.status_tx.clone();
+                            let captured_buffer = self.current_chirp.clone().unwrap().samples;
+                            let sample_rate = self.captured_input_sample_rate as u32;
+                            self.tasker.spawn(async move {
+                                tx.send("Saving csv file".to_string()).await.unwrap();
+                                audio::save_mono_vec_with_db_to_csv(
+                                    &captured_buffer,
+                                    sample_rate,
+                                    &path,
+                                )
+                                .await
+                                .unwrap();
+                                tx.send("Done saving csv file".to_string()).await.unwrap();
+                            });
+                        }
+                    };
+                });
             });
         });
     }
@@ -331,16 +348,20 @@ impl CalibrateTab {
     }
 
     fn update_outgoing_wave_graph(&mut self) {
+        if self.current_chirp.is_none() {
+            return;
+        }
         let elapsed = self.start_time.elapsed().as_secs_f32();
-        let max_time = elapsed.min(self.duration);
+        let max_time = elapsed.min(self.duration.unwrap());
 
         // Plot the sine wave over time
-        let samples_to_show = (max_time * DEFAULT_SAMPLE_RATE) as usize;
+        let samples_to_show = (max_time * self.output_sample_rate.unwrap()) as usize;
 
         let downsample_factor = DEFAULT_DOWNSAMPLE_FACTOR as usize;
         let chirp_segement = self
             .current_chirp
             .clone()
+            .unwrap()
             .enumerate()
             .filter(|(i, _)| i % downsample_factor == 0)
             .take(samples_to_show / downsample_factor)
@@ -352,13 +373,13 @@ impl CalibrateTab {
             .enumerate()
             .map(|(i, &val)| {
                 // Multiply by tghe downsample_factor to restore the units to seconds.
-                let time = (i * downsample_factor) as f32 / DEFAULT_SAMPLE_RATE;
+                let time = (i * downsample_factor) as f32 / self.output_sample_rate.unwrap();
                 [time as f64, val as f64]
             })
             .collect();
         self.points_vector = points;
         // Stop playing after 15 seconds
-        if elapsed >= self.duration {
+        if elapsed >= self.duration.unwrap() {
             self.is_playing.store(false, Ordering::SeqCst);
             self.started_sound = false;
         }
@@ -374,6 +395,7 @@ impl CalibrateTab {
                     self.paint_chirp_end_input(ui);
                     self.paint_output_sample_rate_input(ui);
                     self.paint_captured_input_sample_rate(ui);
+                    self.paint_input_file_input(ui);
                 });
             });
         });

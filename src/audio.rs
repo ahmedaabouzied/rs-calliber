@@ -115,14 +115,14 @@ pub fn save_mono_vec_to_wav(
         channels: 1, // Mono audio has 1 channel
         sample_rate,
         bits_per_sample: 32,
-        sample_format: hound::SampleFormat::Int,
+        sample_format: hound::SampleFormat::Float,
     };
 
     let mut writer = WavWriter::create(file_path, spec)?;
 
     for sample in data {
         // Convert f32 to i16
-        let mono_sample = *sample * i16::MAX as f32;
+        let mono_sample = *sample * f32::MAX;
 
         writer.write_sample(mono_sample)?;
     }
@@ -137,12 +137,13 @@ pub async fn save_mono_vec_with_db_to_csv(
     file_path: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut file = File::create(file_path).await?;
-    file.write(b"Time (s),Sample Value,Amplitude (dB)").await?; // Add header
+    file.write(b"Time (s),Sample Value,Amplitude (dB) \n")
+        .await?; // Add header
 
     for (i, sample) in data.iter().enumerate() {
         let time = i as f32 / sample_rate as f32;
         let db_value = 20.0 * sample.abs().log10(); // Calculate amplitude in dB
-        file.write(format!("{},{},{}", time, sample, db_value).as_bytes())
+        file.write(format!("{},{},{} \n", time, sample, db_value).as_bytes())
             .await?;
     }
 
