@@ -12,22 +12,33 @@ pub struct Chirp {
     pub samples: Vec<f32>,
 }
 
-impl From<hound::WavReader<std::io::BufReader<std::fs::File>>> for Chirp {
-    fn from(mut r: hound::WavReader<std::io::BufReader<std::fs::File>>) -> Self {
+impl TryFrom<hound::WavReader<std::io::BufReader<std::fs::File>>> for Chirp {
+    type Error = String;
+    fn try_from(
+        mut r: hound::WavReader<std::io::BufReader<std::fs::File>>,
+    ) -> Result<Self, Self::Error> {
         let spec = r.spec();
-        let samples: Vec<f32> = r.samples::<i32>().map(|s| s.unwrap() as f32).collect();
+        let mut samples: Vec<f32> = Vec::new();
+        for s in r.samples::<i16>() {
+            match s {
+                Ok(v) => {
+                    samples.push(v as f32);
+                }
+                Err(e) => return Err(e.to_string()),
+            }
+        }
         let duration = r.duration() / spec.sample_rate;
         let sample_rate = spec.sample_rate;
-        let start_freq = samples[0];
-        let end_freq = samples.last().unwrap().clone();
-        Self {
+        let start_freq = 0.00;
+        let end_freq = 0.00;
+        Ok(Self {
             samples,
             sample_rate: sample_rate as f32,
             duration: duration as f32,
             start_freq: start_freq,
             end_freq: end_freq.to_owned(),
             index: 0,
-        }
+        })
     }
 }
 

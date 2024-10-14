@@ -7,7 +7,10 @@ mod chirp;
 mod detect;
 mod freq;
 mod task;
+mod utils;
 mod wave;
+
+use utils::Result;
 
 struct MainUI {
     selected_tab: u8,
@@ -52,6 +55,48 @@ impl MainUI {
             self.status = "Running".to_string();
         }
     }
+
+    fn update(
+        &mut self,
+        ctx: &egui::Context,
+        _frame: &mut eframe::Frame,
+        ui: &mut egui::Ui,
+    ) -> Result<()> {
+        egui::scroll_area::ScrollArea::vertical().show(ui, |ui| match self.selected_tab {
+            0 => self
+                .calibrate_tab
+                .render(ui, ctx, _frame)
+                .unwrap_or_else(|e| {
+                    self.status = e.to_string();
+                    ()
+                }),
+            1 => self.detect_tab.render(ui, ctx, _frame).unwrap_or_else(|e| {
+                self.status = e.to_string();
+                ()
+            }),
+            _ => (),
+        });
+        self.update_status();
+        Ok(())
+    }
+
+    fn show_error_popup(&mut self, ctx: &egui::Context, msg: String) {
+        let screen_rect = ctx.screen_rect();
+        let error_window_rect = egui::Rect::from_min_size(
+            screen_rect.center() - egui::vec2(100.0, 0.0),
+            egui::vec2(200.0, 50.0),
+        );
+        egui::Window::new("Error")
+            .collapsible(false)
+            .title_bar(true)
+            .fixed_rect(error_window_rect)
+            .show(ctx, |ui| {
+                ui.label(msg);
+                if ui.button("Dismiss").clicked {
+                    self.status = "Running".to_string();
+                }
+            });
+    }
 }
 
 impl eframe::App for MainUI {
@@ -84,12 +129,15 @@ impl eframe::App for MainUI {
                 });
             });
             ui.separator();
-            egui::scroll_area::ScrollArea::vertical().show(ui, |ui| match self.selected_tab {
-                0 => self.calibrate_tab.render(ui, ctx, _frame),
-                1 => self.detect_tab.render(ui, ctx, _frame),
-                _ => {}
-            });
-            self.update_status();
+            match self.update(ctx, _frame, ui) {
+                Ok(_) => {}
+                Err(e) => {
+                    self.status = e.to_string();
+                }
+            }
+            if self.status.contains("error") {
+                self.show_error_popup(ctx, self.status.clone());
+            }
         });
     }
 }

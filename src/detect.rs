@@ -11,6 +11,8 @@ use std::thread::spawn;
 use std::time::Instant;
 use tokio::sync::mpsc::Sender as TSender;
 
+use crate::utils::Result;
+
 #[derive(Debug)]
 pub struct DetectTab {
     sine_wave_freq: f32,
@@ -311,7 +313,12 @@ impl DetectTab {
         });
     }
 
-    pub fn render(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    pub fn render(
+        &mut self,
+        ui: &mut egui::Ui,
+        ctx: &egui::Context,
+        _frame: &mut eframe::Frame,
+    ) -> Result<()> {
         egui::Frame::group(ui.style()).show(ui, |ui| {
             ui.with_layout(
                 egui::Layout::top_down_justified(egui::Align::Center),
@@ -421,5 +428,6 @@ impl DetectTab {
                 ctx.request_repaint();
             });
         });
+        Ok(())
     }
 }
