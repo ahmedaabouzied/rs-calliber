@@ -279,6 +279,7 @@ impl DetectTab {
                     ui.label(egui::RichText::new("Output"));
                     Plot::new("Sine Wave")
                         .height(240.0)
+                        .allow_scroll(false)
                         .allow_drag(true)
                         .show(ui, |plot_ui| {
                             plot_ui.line(Line::new(PlotPoints::new(points_to_plot)));
@@ -376,7 +377,9 @@ impl DetectTab {
             ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
                 ui.label(egui::RichText::new("Captured Input"));
                 let line = Line::new(PlotPoints::new(points));
-                let plot = Plot::new("Received audio").height(240.0);
+                let plot = Plot::new("Received audio")
+                    .allow_scroll(false)
+                    .height(240.0);
                 plot.show(ui, |plot_ui| {
                     plot_ui.line(line);
                 });
