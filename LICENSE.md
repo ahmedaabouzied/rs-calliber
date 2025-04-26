@@ -1,4 +1,4 @@
-# Calliber License
+# Caliber License
 
 Copyright (c) 2025 Ahmed Abouzied
 
