@@ -6,3 +6,6 @@
 [ ] 5. Enable exporting the captured wave to a CSV file.
 [ ] 6. Enable playing a wave at a particular frequency of resonance.
 [ ] 7. Capture the incoming waves in step 4 continously.
+
+TODO
+Enable export to csv and wav for detection mode input wave
